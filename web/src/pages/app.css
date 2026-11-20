@@ -1,0 +1,156 @@
+/* Phone layout shared by /app pages */
+.phone {
+  min-height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--page);
+}
+.phone-body {
+  flex: 1;
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.app-greeting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 4px 0;
+}
+.app-greeting h1 {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.app-greeting p {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.talk-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border-radius: var(--r-lg);
+  background: var(--voice);
+  color: #fff;
+  text-decoration: none;
+  min-height: 92px;
+}
+.talk-card-icon {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--voice);
+  display: grid;
+  place-items: center;
+}
+.talk-card-title {
+  display: block;
+  font-size: 22px;
+}
+.talk-card-sub {
+  display: block;
+  font-size: 15px;
+  opacity: 0.9;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.shortcut {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  min-height: 124px;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  text-decoration: none;
+  font-size: 17px;
+}
+.shortcut-sound {
+  background: var(--sound-tint);
+  border-color: var(--sound-tint);
+  color: var(--ink);
+}
+.shortcut-sound svg {
+  color: var(--sound);
+}
+
+.app-section-title {
+  font-size: 16px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.empty-note {
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.steps-strip {
+  list-style: none;
+  margin: 0;
+  padding: 14px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.steps-strip li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.steps-num {
+  font-size: 17px;
+}
+.tone-voice {
+  color: var(--voice);
+}
+.tone-sound {
+  color: var(--sound-text);
+}
+.tone-ok {
+  color: var(--ok);
+}
+
+.bottom-nav {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+}
+.bottom-nav a {
+  min-height: var(--touch);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.bottom-nav a.active {
+  color: var(--voice);
+}

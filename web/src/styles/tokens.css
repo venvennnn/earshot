@@ -1,0 +1,41 @@
+:root {
+  /* Type */
+  --font: 'Century Gothic', CenturyGothic, AppleGothic, Questrial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Neutrals */
+  --page: #f4f5f7;
+  --surface: #ffffff;
+  --ink: #12161c;
+  --text-2: #3f4653;
+  --muted: #5b6372;
+  --line: #e2e5ea;
+
+  /* Voice: everything about talking and the agent */
+  --voice: #2b54d4;
+  --voice-tint: #e8edfb;
+
+  /* Sound: everything about listening */
+  --sound: #e58a12;
+  --sound-text: #8a4b00;
+  --sound-tint: #fdf1e1;
+  --listen-bg: #1a1510;
+
+  /* Status */
+  --ok: #1e7f4a;
+  --ok-tint: #e5f3eb;
+  --problem: #c0352b;
+  --problem-tint: #fbe9e7;
+
+  /* Dark band */
+  --night: #12161c;
+  --night-card: #1e232b;
+
+  /* Shape */
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --touch: 44px;
+  --btn: 52px;
+  --btn-lg: 56px;
+}

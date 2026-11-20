@@ -1,0 +1,22 @@
+# Secrets
+.env
+.env.*
+!.env.example
+!web/.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+web/dist/
+
+# Data and generated artifacts
+data/
+backend/store/
+*.log
+.DS_Store
+.vercel
