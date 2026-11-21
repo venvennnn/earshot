@@ -193,8 +193,10 @@ async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any],
         case "quarantine_batch":
             st.set_asset_state(asset_id, "out", "On hold")
         case "register_asset":
+            casting = result["type"] == "casting"
             st.add_asset({"id": result["asset_id"], "name": result["name"], "type": result["type"],
-                          "line": result.get("line", ""), "modes": ["continuous"], "parts": 0})
+                          "line": result.get("line", ""), "modes": ["tap"] if casting else ["continuous"],
+                          "parts": 12 if casting else 0})
         case "notify_people":
             for n in result.get("notifications", []):
                 asyncio.create_task(brief_person(svc, n["person"], n["message"], session_id, notification_id=n["id"]))

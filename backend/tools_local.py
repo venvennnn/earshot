@@ -87,15 +87,20 @@ async def start_listening(svc: Services, session: Session, args: dict[str, Any])
     purpose = args.get("purpose") or "check"
     if asset_id not in svc.state.assets:
         return {"ok": False, "message": f"{asset_id} is not on this line. Use identify_asset or register_asset first."}
-    if purpose == "enroll" and mode == "tap" and svc.state.tap_batches.get(asset_id, {}).get("parts"):
-        return {"ok": False, "message": "This wheelset already has tap results. Start a new batch before replacing its baseline."}
+    if mode == "tap":
+        if purpose != "enroll" and (session.tap_baseline_asset or session.awaiting_batch_number):
+            return {"ok": False, "message": "Finish recording the new baseline before running a tap test."}
+        if purpose == "enroll" and svc.state.tap_batches.get(asset_id, {}).get("parts"):
+            return {"ok": False, "message": "This batch already has results. Say start a new batch with its new batch number to record a fresh baseline."}
+        if purpose == "enroll":
+            session.tap_baseline_asset = asset_id
     enrolled = (svc.state.assets[asset_id].get("tap_reference_url") if mode == "tap"
                 else purpose == "enroll" or mode == "alarm" or asset_id in svc.audio_store.enrolled())
     if purpose != "enroll" and not enrolled:
         return {"ok": False, "not_enrolled": True,
                 "message": "No healthy sound is recorded for this machine yet. Offer to record it now with purpose 'enroll'."}
     session.focus_asset = asset_id
-    await svc.bus.emit("capture_start", session=session.id, asset_id=asset_id, mode=mode, purpose=purpose)
+    await svc.bus.emit("capture_start", session=session.id, asset_id=asset_id, asset=svc.state.assets[asset_id], mode=mode, purpose=purpose)
     return {"ok": True, "status": "listening_started", "instruction": LISTEN_TELL}
 
 

@@ -59,6 +59,11 @@ SPEECH_LEAD = re.compile(
 )
 TAP_ACTIVITY = re.compile(r"^(?:do\s+)?(?:the\s+)?(?:(railway|railways)\s+)?tap[ -]test(?:ing)?$", re.IGNORECASE)
 TAP_SELECTION = re.compile(r"^(?:do\s+)?(?:use|select|choose)\s+(?:the\s+)?(.+)$", re.IGNORECASE)
+NEW_CASTING_BATCH = re.compile(
+    r"^(?:start|create|register)\s+(?:a\s+)?new\s+(?:casting\s+)?batch"
+    r"(?:\s+(?:number\s+)?(?P<number>\d{3,12}))?$", re.IGNORECASE,
+)
+BATCH_NUMBER = re.compile(r"^(?:(?:casting )?batch\s+)?(?:([0-9]{1,12})[.,\s]+)?([0-9]{3,12})$", re.IGNORECASE)
 FALLBACK = "Sorry, I couldn't think that through just now. Please say it again."
 
 
@@ -171,7 +176,7 @@ class Orchestrator:
                     session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
 
                 started = time.perf_counter()
-                reply = await self._machine_check(session, user_text) if user_text and not note and not pending else ""
+                reply = await self._machine_check(session, user_text) if user_text and not note else ""
                 if not reply:
                     reply = await self._loop(session, background)
                 if background and session.preempt.is_set():
@@ -207,6 +212,30 @@ class Orchestrator:
         offered = tap_assets.get(session.offered_tap_asset or "")
         session.offered_tap_asset = None
 
+        if session.tap_baseline_asset and text.casefold() in {"cancel baseline", "cancel the baseline"}:
+            session.tap_baseline_asset = None
+            session.awaiting_batch_number = False
+            return "Baseline setup cancelled. The previous reference is still available if one was saved."
+
+        if self.svc.pack.id == "manufacturing":
+            new_batch = NEW_CASTING_BATCH.fullmatch(text)
+            number = BATCH_NUMBER.fullmatch(text)
+            if new_batch:
+                session.awaiting_batch_number = True
+                if new_batch["number"]:
+                    return await self._record_casting_batch(session, new_batch["number"])
+                return "What is the new casting batch number? The current batch and its results will stay saved."
+            if session.awaiting_batch_number:
+                if original.casefold() in {"cancel", "never mind", "stop"}:
+                    session.awaiting_batch_number = False
+                    session.tap_baseline_asset = None
+                    return "Okay, keeping the current batch."
+                if number and (not number[1] or number[2].startswith(number[1])):
+                    return await self._record_casting_batch(session, number[2])
+                return "I need the new casting batch number before I can record its baseline. Say the full number, or say cancel."
+            if number and (session.tap_baseline_asset or session.focus_asset in tap_assets):
+                return "To record a new casting batch, say start a new batch followed by its number."
+
         activity = TAP_ACTIVITY.fullmatch(text)
         selection = TAP_SELECTION.fullmatch(text)
         if selection:
@@ -216,7 +245,7 @@ class Orchestrator:
                        if text.casefold() in (asset["name"].casefold(), asset["id"].casefold())]
         if len(matches) == 1:
             return self._select_tap_asset(session, matches[0])
-        if offered and spoken_decision(original) == "yes":
+        if offered and spoken_decision(original) == "yes" and not confirmations.pending_for(self.svc, session.id):
             return self._select_tap_asset(session, offered)
         if offered and original.casefold() in {"no", "nope", "not now"}:
             return "Okay. Which wheelset or batch should we use?"
@@ -253,6 +282,10 @@ class Orchestrator:
             matches = [focused] if focused else list(assets.values()) if direct else []
         else:
             matches = match_assets(list(assets.values()), target)
+            if baseline and (digits := re.findall(r"\d+", target)):
+                matches = [asset for asset in matches if digits[-1] in re.findall(r"\d+", f"{asset['id']} {asset['name']}")]
+                if not matches:
+                    return f"I can't find that batch or wheelset. To register a new casting batch, say start a new batch {digits[-1]}."
         if len(matches) != 1:
             if start and not tap_requested:
                 return "Which machine should I record? Say start listening to, followed by its name."
@@ -264,13 +297,7 @@ class Orchestrator:
         asset = matches[0]
         mode = "tap" if tap_requested else (asset.get("modes") or ["continuous"])[0]
         if mode == "tap" and (baseline or not asset.get("tap_reference_url")):
-            result = await self.execute(session, "start_listening", {
-                "asset_id": asset["id"], "mode": "tap", "purpose": "enroll",
-            })
-            if result.get("ok"):
-                part = "wheel" if "wheel" in asset["type"] else "part"
-                return f"Record a good {part} as the baseline for {asset['name']}. Tap it once after the beep."
-            return str(result.get("message") or result.get("error") or "Open Tap test to try again.")
+            return await self._record_tap_baseline(session, asset)
         result = await self.execute(session, "start_listening", {"asset_id": asset["id"], "mode": mode})
         if result.get("ok"):
             if mode == "tap":
@@ -287,6 +314,29 @@ class Orchestrator:
             return (f"{asset['name']} needs a healthy recording first. "
                     "When it's running normally, say start recording.")
         return str(result.get("message") or result.get("error") or "Tap Listen to machine to try again.")
+
+    async def _record_casting_batch(self, session: Session, number: str) -> str:
+        name = f"Casting batch {number}"
+        asset = next((a for a in self.svc.state.assets.values() if a["name"].casefold() == name.casefold()), None)
+        if asset is None:
+            result = await self.execute(session, "register_asset", {
+                "name": name, "asset_type": "casting", "line": self.svc.pack.line,
+            })
+            asset = self.svc.state.assets.get(result.get("asset_id", ""))
+            if asset is None:
+                return f"I couldn't register {name}. Say its number again to retry."
+        session.awaiting_batch_number = False
+        return await self._record_tap_baseline(session, asset)
+
+    async def _record_tap_baseline(self, session: Session, asset: dict[str, Any]) -> str:
+        session.tap_baseline_asset = asset["id"]
+        result = await self.execute(session, "start_listening", {
+            "asset_id": asset["id"], "mode": "tap", "purpose": "enroll",
+        })
+        if result.get("ok"):
+            part = "wheel" if "wheel" in asset["type"] else "part"
+            return f"Recording the baseline for {asset['name']}. Tap one known-good {part} after the beep."
+        return str(result.get("message") or result.get("error") or "Open Tap test to try again.")
 
     def _select_tap_asset(self, session: Session, asset: dict[str, Any]) -> str:
         session.focus_asset = asset["id"]

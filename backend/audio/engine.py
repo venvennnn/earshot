@@ -122,8 +122,14 @@ class AudioEngine:
             taps = detect_taps(y)
             if not taps:
                 return {"enrolled": False, "issue": "no_taps", "tip": "Tap the good part firmly, close to the phone."}
-            if len(taps) != 1:
-                return {"enrolled": False, "issue": "multiple_taps", "tip": "Tap one known-good part once after the beep and let it ring."}
+            if len(taps) > 1:
+                # Onset detection can pick up reflections and handling noise after the real tap.
+                ranked = sorted(taps, key=lambda tap: float(np.max(np.abs(tap.segment))), reverse=True)
+                strongest, runner_up = (float(np.max(np.abs(tap.segment))) for tap in ranked[:2])
+                if runner_up >= strongest * 0.5:
+                    return {"enrolled": False, "issue": "multiple_taps",
+                            "tip": "I heard more than one strong tap. Keep the phone still, then tap one good part once."}
+                taps = ranked[:1]
             clip_url = self.store.save_clip(y, SR)
             embs = self.embedder.audio([windows(t.segment)[0] for t in taps])
             mean = _normalise(embs.mean(axis=0))

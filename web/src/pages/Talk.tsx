@@ -98,7 +98,7 @@ export default function Talk() {
     (e: LiveEvent) => {
       if (!session) return;
       if (e.kind === 'capture_start' && e.session === session.session) {
-        const asset = live?.assets.find((a) => a.id === e.asset_id);
+        const asset = e.asset ?? live?.assets.find((a) => a.id === e.asset_id);
         if (asset) setCapture({ asset, mode: e.mode, purpose: e.purpose });
       }
       if (e.kind === 'play_audio' && e.target === 'session' && e.session === session.session) void playAudio(e.url);

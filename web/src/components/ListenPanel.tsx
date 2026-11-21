@@ -161,7 +161,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     <div className="listen" role="dialog" aria-label="Listening to the machine">
       <span className="listen-pill">
         <span className="dot" />{' '}
-        {purpose === 'enroll' ? 'Recording the healthy sound' : purpose === 'verify' ? 'Checking the repair' : 'Listening to the machine'}
+        {tapReference ? 'Tap baseline · known-good part' : purpose === 'enroll' ? 'Recording the healthy sound' : purpose === 'verify' ? 'Checking the repair' : 'Listening to the machine'}
       </span>
       <h1 className="listen-asset">{asset.name}</h1>
       <p className="listen-sub">

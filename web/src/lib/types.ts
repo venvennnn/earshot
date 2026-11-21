@@ -211,7 +211,7 @@ export interface LiveState {
 }
 
 export type LiveEvent =
-  | { kind: 'capture_start'; session: string; asset_id: string; mode: Mode; purpose: Purpose }
+  | { kind: 'capture_start'; session: string; asset_id: string; asset?: Asset; mode: Mode; purpose: Purpose }
   | { kind: 'play_audio'; target: 'dashboard' | 'session'; session?: string; url: string; label?: string; text?: string }
   | { kind: 'briefing'; name: string; contact_id: string }
   | { kind: 'tool'; session: string; name: string; status: string };

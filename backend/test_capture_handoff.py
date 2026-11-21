@@ -2,7 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 from events import LiveState
 from orchestrator import Orchestrator
@@ -29,7 +29,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Check pump P-14.")
         self.assertIn("Recording starts after the beep", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="check"
+            "capture_start", session=self.session.id, asset_id="P-14", asset=ANY, mode="continuous", purpose="check"
         )
 
     async def test_missing_baseline_guides_setup_without_opening_capture(self):
@@ -47,7 +47,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4401.")
         self.assertIn("baseline for Coach 4401", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="C-4401", mode="tap", purpose="enroll"
+            "capture_start", session=self.session.id, asset_id="C-4401", asset=ANY, mode="tap", purpose="enroll"
         )
 
     async def test_railway_tap_request_checks_an_enrolled_wheelset(self):
@@ -58,7 +58,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4402.")
         self.assertIn("Coach 4402 is ready", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="C-4402", mode="tap", purpose="check"
+            "capture_start", session=self.session.id, asset_id="C-4402", asset=ANY, mode="tap", purpose="check"
         )
 
 
@@ -72,7 +72,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Can you set the tap baseline?")
         self.assertIn("baseline for Coach 4402", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="C-4402", mode="tap", purpose="enroll"
+            "capture_start", session=self.session.id, asset_id="C-4402", asset=ANY, mode="tap", purpose="enroll"
         )
 
 
@@ -81,7 +81,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Start listening.")
         self.assertIn("Recording starts after the beep", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="check"
+            "capture_start", session=self.session.id, asset_id="P-14", asset=ANY, mode="continuous", purpose="check"
         )
 
     async def test_start_recording_enrolls_unset_focused_asset(self):
@@ -90,7 +90,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         reply = await self.orchestrator.run_turn(self.session, user_text="Start recording.")
         self.assertIn("healthy baseline", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="enroll"
+            "capture_start", session=self.session.id, asset_id="P-14", asset=ANY, mode="continuous", purpose="enroll"
         )
 
     async def test_factory_tap_conversation_keeps_casting_batch_context(self):
@@ -110,7 +110,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("baseline for Casting batch 2231", reply)
         self.assertIn("after the beep", reply)
         self.emit.assert_any_await(
-            "capture_start", session=self.session.id, asset_id="CB-2231", mode="tap", purpose="enroll"
+            "capture_start", session=self.session.id, asset_id="CB-2231", asset=ANY, mode="tap", purpose="enroll"
         )
 
     async def test_generic_railway_tap_request_asks_which_coach(self):
@@ -121,3 +121,29 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Coach 4401", reply)
         self.assertIn("Coach 4402", reply)
         self.assertFalse(any(call.args[0] == "capture_start" for call in self.emit.await_args_list))
+
+    async def test_new_batch_records_its_baseline_without_scoring_the_previous_batch(self):
+        svc = self.orchestrator.svc
+        self.session.focus_asset = "CB-2231"
+        svc.state.assets["CB-2231"]["tap_reference_url"] = "/media/clips/old.wav"
+        svc.state.tap_batches["CB-2231"] = {"parts": [{"n": 1, "result": "dull"}]}
+        svc.enterprise = SimpleNamespace(call=AsyncMock(return_value={
+            "registered": True, "asset_id": "CA-101", "name": "Casting batch 2430", "type": "casting",
+        }))
+
+        async def say(text):
+            return await self.orchestrator.run_turn(self.session, user_text=text)
+
+        self.assertIn("already has results", await say("No, replace the baseline."))
+        self.assertIn("Finish recording", await say("Start listening."))
+        self.assertIn("new casting batch number", await say("Okay, let's start a new batch."))
+        self.assertIn("full number", await say("24."))
+        self.assertEqual(self.emit.await_count, 0)
+        self.assertIn("baseline for Casting batch 2430", await say("24. 2430."))
+        self.emit.assert_awaited_once_with(
+            "capture_start", session=self.session.id, asset_id="CA-101", asset=ANY, mode="tap", purpose="enroll"
+        )
+        self.assertEqual(svc.state.tap_batches["CB-2231"]["parts"], [{"n": 1, "result": "dull"}])
+        await say("24. 2430.")
+        self.assertEqual(self.emit.await_count, 1)
+        self.assertEqual(svc.enterprise.call.await_count, 1)

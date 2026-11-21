@@ -9,7 +9,7 @@ import { useVoiceCall } from '../lib/useVoiceCall';
 import { MicIcon } from '../components/Icons';
 import { api, mediaUrl, type ClipResponse, type TurnReply } from '../lib/api';
 import { playAudio } from '../lib/audio';
-import type { TapBatch, TapPart } from '../lib/types';
+import type { Asset, TapBatch, TapPart } from '../lib/types';
 import './app.css';
 import './talk.css';
 
@@ -47,7 +47,7 @@ export default function TapTest() {
   const session = voice.session ?? appSession;
   const tapAssets = live?.assets.filter((a) => a.modes.includes('tap'));
   const asset = tapAssets?.find((a) => a.id === params.get('asset')) ?? tapAssets?.[0];
-  const [recording, setRecording] = useState<{ purpose: 'check' | 'enroll'; part?: number } | null>(null);
+  const [recording, setRecording] = useState<{ purpose: 'check' | 'enroll'; part?: number; asset?: Asset } | null>(null);
   const [savedReference, setSavedReference] = useState<{ assetId: string; url: string } | null>(null);
   const [said, setSaid] = useState('');
   const [finishing, setFinishing] = useState(false);
@@ -58,9 +58,12 @@ export default function TapTest() {
   const lines = voice.session ? (live?.transcript ?? []).filter((l) => l.session === voice.session) : [];
   useLiveEvent(useCallback((e) => {
     if (e.kind === 'capture_start' && e.session === voice.session && e.mode === 'tap'
-      && (e.purpose === 'enroll' || e.purpose === 'check') && live?.assets.some((a) => a.id === e.asset_id)) {
-      setParams({ asset: e.asset_id });
-      setRecording({ purpose: e.purpose });
+      && (e.purpose === 'enroll' || e.purpose === 'check')) {
+      const selected = e.asset ?? live?.assets.find((a) => a.id === e.asset_id);
+      if (selected) {
+        setParams({ asset: selected.id });
+        setRecording({ purpose: e.purpose, asset: selected });
+      }
     }
     if (e.kind === 'play_audio' && e.target === 'session' && e.session && e.session === voice.session) void playAudio(e.url);
   }, [live, setParams, voice.session]));
@@ -83,9 +86,10 @@ export default function TapTest() {
   };
   const done = (res: ClipResponse) => {
     setError('');
-    if (recording?.purpose === 'enroll' && asset) {
+    const recordedAsset = recording?.asset ?? asset;
+    if (recording?.purpose === 'enroll' && recordedAsset) {
       if (res.result.enrolled && typeof res.result.good_tap_url === 'string') {
-        setSavedReference({ assetId: asset.id, url: res.result.good_tap_url });
+        setSavedReference({ assetId: recordedAsset.id, url: res.result.good_tap_url });
       }
       else setError(res.result.tip ?? 'No reference saved. Tap a good part firmly near the phone and try again.');
     } else if (res.result.ok === false) {
@@ -263,7 +267,7 @@ export default function TapTest() {
         </div>
       )}
       {recording && session && (
-        <ListenPanel asset={asset} mode="tap" purpose={recording.purpose} part={recording.part} session={session}
+        <ListenPanel asset={recording.asset ?? asset} mode="tap" purpose={recording.purpose} part={recording.part} session={session}
           onMute={voice.setMuted} onSpeakerMute={voice.setSpeakerMuted} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>

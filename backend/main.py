@@ -298,10 +298,18 @@ async def upload_clip(
     if s is None:
         s = sessions.open(session or f"app-{secrets.token_hex(4)}", "app")
 
+    if mode == "tap" and s.awaiting_batch_number:
+        raise HTTPException(status_code=409, detail="Give the new batch number before recording.")
+    if mode == "tap" and s.tap_baseline_asset and (purpose != "enroll" or s.tap_baseline_asset != asset["id"]):
+        raise HTTPException(status_code=409, detail="Finish recording the selected baseline before running a tap test.")
     if purpose == "enroll" and mode == "tap" and state.tap_batches.get(asset["id"], {}).get("parts"):
         raise HTTPException(status_code=409, detail="Start a new batch before replacing its baseline.")
     if purpose == "enroll":
+        if mode == "tap":
+            s.tap_baseline_asset = asset["id"]
         result, note = await listen_flow.enroll(svc, engine, asset, y, mode)
+        if mode == "tap" and result["enrolled"]:
+            s.tap_baseline_asset = None
     elif purpose == "verify":
         result, note = await listen_flow.verify(svc, engine, s, asset, y)
     elif mode == "tap":
