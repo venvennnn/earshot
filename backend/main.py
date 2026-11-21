@@ -174,10 +174,14 @@ class SessionRequest(BaseModel):
 
 async def voice_profile(language: str) -> VoiceProfile:
     locale = LOCALES[language]
+    words = ["yes", "yeah", "finish", "finish the batch", "EarShot"]
+    words += [a["name"] for a in svc.state.assets.values()] + [a["id"] for a in svc.state.assets.values()]
+    words += [p.name for p in svc.pack.people] + list(svc.pack.vocabulary.values())
+    keywords = tuple(dict.fromkeys(w.strip() for w in words if w and str(w).strip()))[:60]
     if settings.murf_agent_voice:
-        return VoiceProfile(ASR_LANGUAGES[language], settings.murf_agent_voice, locale)
+        return VoiceProfile(ASR_LANGUAGES[language], settings.murf_agent_voice, locale, keywords)
     voice, locale = await svc.murf.voice_for(locale, 0)
-    return VoiceProfile(ASR_LANGUAGES[language], voice, locale)
+    return VoiceProfile(ASR_LANGUAGES[language], voice, locale, keywords)
 
 
 @app.post("/api/session")
@@ -282,8 +286,13 @@ async def upload_clip(
     else:
         result, note = await listen_flow.analyze(svc, engine, s, asset, y)
 
+    spoken = result.pop("spoken", None) if isinstance(result, dict) else None
     out: dict[str, Any] = {"session": s.id, "result": public_analysis(result)}
-    if s.kind == "voice":
+    # A tap (or a setup recording) is one short sentence. A full tool-loop turn here holds the
+    # conversation lock and Agora gives up on whatever the worker is saying.
+    if s.kind == "voice" and spoken:
+        orchestrator.remember_and_speak(s, note, spoken)
+    elif s.kind == "voice":
         orchestrator.background(s, note)  # the agent speaks the result when ready
     else:
         out |= await orchestrator.turn_and_say(s, note=note)
@@ -316,11 +325,14 @@ async def finish_tap(asset_id: str, req: FinishTap) -> dict[str, Any]:
     asset = state.assets.get(asset_id.upper())
     if asset is None:
         raise HTTPException(status_code=404, detail=f"Unknown machine {asset_id}")
-    summary, note = listen_flow.finish_tap(svc, asset)
     s = sessions.find(req.session) if req.session else None
     s = s or sessions.open(req.session or f"app-{secrets.token_hex(4)}", "app")
+    summary, note, spoken = await listen_flow.close_tap_batch(svc, s, asset)
     if s.kind == "voice":
-        orchestrator.background(s, note)
+        if spoken:
+            orchestrator.remember_and_speak(s, note, spoken)
+        else:
+            orchestrator.background(s, note)
         return {"summary": summary}
     return {"summary": summary, **await orchestrator.turn_and_say(s, note=note)}
 

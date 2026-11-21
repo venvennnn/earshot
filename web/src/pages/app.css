@@ -564,3 +564,10 @@
 .voice-strip.live .btn {
   margin-left: auto;
 }
+.tap-transcript {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

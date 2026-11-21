@@ -36,6 +36,7 @@ class VoiceProfile:
     asr_language: str  # e.g. "en-IN", "hi-IN", "ta-IN" (Agora turn-detection / ARES language)
     murf_voice_id: str
     murf_locale: str
+    keywords: tuple[str, ...] = ()  # site words ARES should recognise (yes, machine names, "finish")
 
 
 class AgentManager:
@@ -56,13 +57,14 @@ class AgentManager:
 
     def build_agent(self, channel: str, greeting: str, voice: VoiceProfile) -> Agent:
         s = self._settings
+        stt = AresSTT(keywords=list(voice.keywords)) if voice.keywords else AresSTT()
         return (
             Agent(
                 client=self._client,
                 turn_detection={"language": voice.asr_language},
                 interruption={"enable": True, "mode": "start_of_speech"},
             )
-            .with_stt(AresSTT())
+            .with_stt(stt)
             .with_llm(
                 CustomLLM(
                     base_url=self.llm_url(channel),
@@ -81,6 +83,7 @@ class AgentManager:
                     model=s.murf_model,
                 )
             )
+            .with_parameters({"audio_scenario": "aiserver"})
         )
 
     async def start(self, channel: str, user_uid: int, greeting: str, voice: VoiceProfile) -> str:
@@ -103,12 +106,12 @@ class AgentManager:
         log.info("Agent %s started in %s", agent_id, channel)
         return agent_id
 
-    async def speak(self, channel: str, text: str) -> None:
+    async def speak(self, channel: str, text: str, priority: str = "INTERRUPT") -> None:
         """Make a running agent say `text` now, outside a user turn."""
         session = self._sessions.get(channel)
         if session is None:
             raise AgentError("No voice agent is running for this session.")
-        await session.say(text, priority="INTERRUPT", interruptable=True)
+        await session.say(text, priority=priority, interruptable=True)
 
     async def stop(self, channel: str) -> None:
         session = self._sessions.pop(channel, None)

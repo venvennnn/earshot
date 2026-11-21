@@ -9,6 +9,7 @@ export function useVoiceCall() {
   const [status, setStatus] = useState<CallStatus>('off');
   const [session, setSession] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [needsTap, setNeedsTap] = useState(false);
   const callRef = useRef<VoiceCall | null>(null);
 
   const stop = useCallback(async () => {
@@ -28,7 +29,7 @@ export function useVoiceCall() {
     try {
       const s = await api.startSession('voice');
       if (s.kind !== 'voice') throw new Error('Voice is off (demo mode).');
-      const call = new VoiceCall(s, () => undefined);
+      const call = new VoiceCall(s, () => setNeedsTap(true));
       callRef.current = call;
       await call.join();
       setSession(s.session);
@@ -54,5 +55,10 @@ export function useVoiceCall() {
     await callRef.current?.setMuted(muted);
   }, []);
 
-  return { status, session, error, start, stop, setMuted };
+  const resume = useCallback(() => {
+    callRef.current?.resumeAudio();
+    setNeedsTap(false);
+  }, []);
+
+  return { status, session, error, needsTap, start, stop, setMuted, resume };
 }
