@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type ClipResponse } from '../lib/api';
-import { CLIP_SECONDS, Recorder, fileToWav } from '../lib/capture';
+import { CLIP_SECONDS, QUIET_LEVEL, Recorder, fileToWav } from '../lib/capture';
 import type { Asset, Mode, Purpose } from '../lib/types';
 
 const MODES: { id: Mode; label: string }[] = [
@@ -38,6 +38,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
   const meterRef = useRef<HTMLDivElement>(null);
   const recorderRef = useRef<Recorder | null>(null);
   const [file, setFile] = useState<File | null>(null); // "Use a recording instead": skips the microphone
+  const [fileShown, setFileShown] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
@@ -60,14 +61,19 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       if (bars) for (let i = 0; i < bars.length; i++) (bars[i] as HTMLElement).style.height = `${8 + (levels[i] ?? 0) * 92}%`;
       frame = requestAnimationFrame(draw);
     };
-    const qualityTimer = window.setInterval(() => setQuiet(mode === 'continuous' && recentLoud < 0.04), 800);
+    const qualityTimer = window.setInterval(() => !file && setQuiet(mode === 'continuous' && recentLoud < QUIET_LEVEL), 800);
 
     const timer = window.setTimeout(async () => {
       if (file) {
         try {
           setPhase('working');
-          const wav = await fileToWav(file);
+          const { wav, levels: fileLevels } = await fileToWav(file);
           if (abort.signal.aborted) return;
+          // Show the file's real waveform: this is the sound EarShot is analysing.
+          const bars = meterRef.current?.children;
+          if (bars) for (let i = 0; i < bars.length; i++) (bars[i] as HTMLElement).style.height = `${8 + (fileLevels[i] ?? 0) * 92}%`;
+          setQuiet(Math.max(...fileLevels) < QUIET_LEVEL);
+          setFileShown(true);
           doneRef.current(await api.uploadClip(wav, { asset_id: asset.id, mode, purpose, session, part }));
         } catch (e) {
           if (abort.signal.aborted) return;
@@ -147,6 +153,11 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
           <span key={i} />
         ))}
       </div>
+      {fileShown && phase === 'working' && (
+        <p className={`listen-check ${quiet ? 'warn' : 'good'}`}>
+          {quiet ? 'This recording is very quiet' : `Using ${file?.name}: this is the sound EarShot is analysing`}
+        </p>
+      )}
       {phase === 'recording' && (
         <p className={`listen-check ${quiet ? 'warn' : 'good'}`}>
           {quiet ? 'Too quiet, move closer' : 'Good, the sound is coming through clearly'}

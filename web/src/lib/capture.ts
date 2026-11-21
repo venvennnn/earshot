@@ -31,6 +31,15 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+/** RMS amplitude -> 0..1 for display: -60 dBFS (silence) .. -10 dBFS (loud). */
+export function dbLevel(rms: number): number {
+  const db = 20 * Math.log10(rms + 1e-9);
+  return Math.max(0, Math.min(1, (db + 60) / 50));
+}
+
+/** Below this the backend rejects a clip as too quiet (about -55 dBFS). */
+export const QUIET_LEVEL = 0.1;
+
 export class Recorder {
   private ctx: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -62,13 +71,13 @@ export class Recorder {
     };
   }
 
-  /** Current loudness 0..1 (RMS, scaled for display). */
+  /** Current loudness 0..1 on a decibel scale, so quiet machine sound still moves the meter. */
   level(): number {
     if (!this.analyser) return 0;
     this.analyser.getFloatTimeDomainData(this.levelBuf);
     let sum = 0;
     for (const v of this.levelBuf) sum += v * v;
-    return Math.min(1, Math.sqrt(sum / this.levelBuf.length) * 6);
+    return dbLevel(Math.sqrt(sum / this.levelBuf.length));
   }
 
   async beep(frequency = 880, ms = 180): Promise<void> {
@@ -121,8 +130,9 @@ export class Recorder {
   }
 }
 
-/** Any audio file the browser can play (WAV, MP3, M4A, …) -> mono WAV, first `maxSeconds` seconds. */
-export async function fileToWav(file: File, maxSeconds = CLIP_SECONDS): Promise<Blob> {
+/** Any audio file the browser can play (WAV, MP3, M4A, …) -> mono WAV of the first `maxSeconds` seconds,
+ * plus `bars` loudness values across it (to draw the file's real waveform). */
+export async function fileToWav(file: File, bars = 48, maxSeconds = CLIP_SECONDS): Promise<{ wav: Blob; levels: number[] }> {
   const ctx = new AudioContext();
   try {
     const audio = await ctx.decodeAudioData(await file.arrayBuffer());
@@ -132,7 +142,13 @@ export async function fileToWav(file: File, maxSeconds = CLIP_SECONDS): Promise<
       const data = audio.getChannelData(ch);
       for (let i = 0; i < length; i++) mono[i] += data[i] / audio.numberOfChannels;
     }
-    return encodeWav(mono, audio.sampleRate);
+    const chunk = Math.max(1, Math.floor(length / bars));
+    const levels = Array.from({ length: bars }, (_, b) => {
+      let sum = 0;
+      for (let i = b * chunk; i < Math.min(length, (b + 1) * chunk); i++) sum += mono[i] * mono[i];
+      return dbLevel(Math.sqrt(sum / chunk));
+    });
+    return { wav: encodeWav(mono, audio.sampleRate), levels };
   } catch {
     throw new Error("Couldn't read that file. Try a WAV or MP3 recording.");
   } finally {
