@@ -59,6 +59,9 @@ SCHEMAS: list[dict[str, Any]] = [
         "again tomorrow'. It is marked done automatically when the machine is checked again.",
         {**_ASSET, "when": {"type": "string", "description": "e.g. 'tomorrow morning', 'next shift'"},
          "note": {"type": "string"}}, ["asset_id", "when", "note"]),
+    _fn("finish_tap_batch",
+        "Finish a tap test (when the worker says they are done or says 'finish'): returns which parts were good, "
+        "dull and not tapped.", _ASSET, ["asset_id"]),
     _fn("record_feedback", "Save the confirmed cause of a recording so future diagnoses improve.",
         {**_ASSET, "confirmed_cause": {"type": "string"}}, ["asset_id", "confirmed_cause"]),
 ]
@@ -163,6 +166,16 @@ async def schedule_follow_up(svc: Services, session: Session, args: dict[str, An
     return {"scheduled": True, "id": item["id"]}
 
 
+async def finish_tap_batch(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
+    from listen_flow import finish_tap  # local import: listen_flow imports this module
+
+    asset = svc.state.assets.get(args["asset_id"].upper())
+    if asset is None:
+        return {"finished": False, "message": "Unknown asset."}
+    summary, note = finish_tap(svc, asset)
+    return {**summary, "instruction": note}
+
+
 async def record_feedback(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
     asset_id = args["asset_id"].upper()
     analysis = _latest(svc, session, asset_id)
@@ -181,5 +194,6 @@ TOOLS: dict[str, LocalTool] = {
     "assess_risk": assess_risk,
     "request_confirmation": request_confirmation,
     "schedule_follow_up": schedule_follow_up,
+    "finish_tap_batch": finish_tap_batch,
     "record_feedback": record_feedback,
 }

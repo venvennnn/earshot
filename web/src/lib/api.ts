@@ -72,6 +72,11 @@ export const api = {
     call<TurnReply & { status: string }>(`/api/confirmations/${confirmationId}`, json({ decision })),
   reply: (contactId: string, reply: string) => call<{ status: string }>(`/api/contacts/${contactId}/reply`, json({ reply })),
   addAsset: (name: string, type: string) => call<{ asset_id: string; name: string }>('/api/assets', json({ name, type })),
+  finishTap: (assetId: string, session: string) =>
+    call<TurnReply & { summary: { finished: boolean; good?: number[]; dull?: number[]; not_tapped?: number[] } }>(
+      `/api/tap/${encodeURIComponent(assetId)}/finish`,
+      json({ session }),
+    ),
   resetTap: (assetId: string) => call<void>(`/api/tap/${assetId}/reset`, { method: 'POST' }),
   switchPack: (id: string) => call<{ active: string }>('/api/pack', json({ id })),
   packs: () => call<{ active: string; packs: { id: string; name: string }[] }>('/api/packs'),

@@ -57,5 +57,6 @@ LOCAL_TIER0 = {
     "assess_risk",
     "request_confirmation",
     "schedule_follow_up",
+    "finish_tap_batch",
     "record_feedback",
 }

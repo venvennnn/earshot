@@ -5,6 +5,8 @@ import { ConfirmSheet } from '../components/ConfirmSheet';
 import { TopBar } from '../components/Bits';
 import { useLive } from '../lib/events';
 import { useAppSession } from '../lib/useAppSession';
+import { useVoiceCall } from '../lib/useVoiceCall';
+import { MicIcon } from '../components/Icons';
 import { api, type ClipResponse, type TurnReply } from '../lib/api';
 import { playAudio } from '../lib/audio';
 import type { TapBatch, TapPart } from '../lib/types';
@@ -40,16 +42,34 @@ function HearGoodVsThis({ batch, part, word }: { batch: TapBatch; part: TapPart;
 export default function TapTest() {
   const [params] = useSearchParams();
   const { live } = useLive();
-  const session = useAppSession();
+  const appSession = useAppSession();
+  const voice = useVoiceCall(); // optional live call: say "yes" or "finish the batch" while tapping
+  const session = voice.session ?? appSession;
   const asset = live?.assets.find((a) => a.id === params.get('asset')) ?? live?.assets.find((a) => a.modes.includes('tap'));
   const [recording, setRecording] = useState<{ purpose: 'check' | 'enroll'; part?: number } | null>(null);
   const [said, setSaid] = useState('');
+  const [finishing, setFinishing] = useState(false);
+  const [error, setError] = useState('');
   const batch = asset ? live?.tap_batches[asset.id] : undefined;
   const pending = live?.confirmations.find((c) => c.session === session && (c.status === 'pending' || c.status === 'second_approval'));
+  // During a call EarShot speaks through Agora; show its latest words here too.
+  const lastSpoken = voice.session ? [...(live?.transcript ?? [])].reverse().find((l) => l.session === voice.session && l.who === 'agent') : undefined;
 
   const heard = (r: TurnReply) => {
     if (r.reply) setSaid(r.reply);
     if (r.audio_url) void playAudio(r.audio_url);
+  };
+  const finish = async () => {
+    if (!session || !asset) return;
+    setFinishing(true);
+    setError('');
+    try {
+      heard(await api.finishTap(asset.id, session));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not finish the batch.');
+    } finally {
+      setFinishing(false);
+    }
   };
   const done = (res: ClipResponse) => {
     setRecording(null);
@@ -81,6 +101,22 @@ export default function TapTest() {
     <div className="phone">
       <main className="phone-body">
         <TopBar title="Tap test" sub={asset.name} right={<span className="pill pill-sound"><span className="dot" /> Ready</span>} />
+        <div className={`voice-strip ${voice.status}`}>
+          {voice.status === 'live' ? (
+            <>
+              <span className="pill pill-ok"><span className="dot" /> Talking to EarShot</span>
+              <span className="muted small">Say "yes" or "finish the batch"</span>
+              <button className="btn" onClick={() => void voice.stop()}>End call</button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-voice" disabled={voice.status === 'connecting'} onClick={() => void voice.start()}>
+                <MicIcon size={18} /> {voice.status === 'connecting' ? 'Connecting…' : 'Talk while testing'}
+              </button>
+              {voice.status === 'error' && <span className="error-text">{voice.error}</span>}
+            </>
+          )}
+        </div>
         <p className="muted">
           Tap each {word} once near the phone. Good {word}s ring. A {word} with a crack sounds dull.
         </p>
@@ -128,12 +164,13 @@ export default function TapTest() {
           <span><b>{total - parts.length}</b> left</span>
         </div>
 
-        {said && (
+        {(lastSpoken?.text || said) && (
           <section className="said">
             <span className="said-who">EarShot</span>
-            <p>{said}</p>
+            <p>{lastSpoken?.text || said}</p>
           </section>
         )}
+        {error && <p className="error-text">{error}</p>}
 
         {!needsReference && (
           <div className="tap-actions">
@@ -146,9 +183,8 @@ export default function TapTest() {
                 {parts.length ? 'Tap the next ones' : 'Start tapping'}
               </button>
             )}
-            <button className="btn btn-lg" disabled={!session}
-              onClick={async () => session && heard(await api.chat(session, `I've finished the tap test for ${asset.name}. What should we do?`))}>
-              Finish batch
+            <button className="btn btn-lg" disabled={!session || finishing || parts.length === 0} onClick={() => void finish()}>
+              {finishing ? 'Checking the batch…' : 'Finish batch'}
             </button>
           </div>
         )}
@@ -159,12 +195,12 @@ export default function TapTest() {
 
       {pending && !recording && (
         <div className="overlay overlay-bottom">
-          <ConfirmSheet confirmation={pending} voice={false} onAnswered={heard} />
+          <ConfirmSheet confirmation={pending} voice={voice.status === 'live'} onAnswered={heard} />
         </div>
       )}
       {recording && session && (
         <ListenPanel asset={asset} mode="tap" purpose={recording.purpose} part={recording.part} session={session}
-          onDone={done} onCancel={() => setRecording(null)} />
+          onMute={voice.setMuted} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>
   );

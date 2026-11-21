@@ -306,6 +306,25 @@ async def add_asset(req: NewAsset) -> dict[str, Any]:
     return result
 
 
+class FinishTap(BaseModel):
+    session: str = ""
+
+
+@app.post("/api/tap/{asset_id}/finish")
+async def finish_tap(asset_id: str, req: FinishTap) -> dict[str, Any]:
+    """Finish a tap-test batch: summary, then EarShot proposes the next step (spoken or as Murf audio)."""
+    asset = state.assets.get(asset_id.upper())
+    if asset is None:
+        raise HTTPException(status_code=404, detail=f"Unknown machine {asset_id}")
+    summary, note = listen_flow.finish_tap(svc, asset)
+    s = sessions.find(req.session) if req.session else None
+    s = s or sessions.open(req.session or f"app-{secrets.token_hex(4)}", "app")
+    if s.kind == "voice":
+        orchestrator.background(s, note)
+        return {"summary": summary}
+    return {"summary": summary, **await orchestrator.turn_and_say(s, note=note)}
+
+
 @app.post("/api/tap/{asset_id}/reset", status_code=204, response_class=Response)
 async def reset_tap_batch(asset_id: str) -> Response:
     state.tap_batches.pop(asset_id.upper(), None)

@@ -172,3 +172,35 @@ async def alarm(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np
                         f"action: {result['action']}. Tell the worker plainly and offer to raise a job.")
     return result, (f"Alarm on {asset['name']}: beep pattern '{result['pattern']}' is not in the alarm list. Say you "
                     "don't recognise it and offer to call a person.")
+
+
+def finish_tap(svc: Services, asset: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Close a tap-test batch: a fixed summary (not left to the LLM) and a note asking for the next step."""
+    st = svc.state
+    batch = st.tap_batches.get(asset["id"])
+    word = "wheel" if "wheel" in asset["type"] else "part"
+    if not batch or not batch["parts"]:
+        return {"finished": False}, f"No {word}s of {asset['name']} have been tapped yet. Tell the worker to start tapping."
+    tested = {p["n"]: p["result"] for p in batch["parts"]}
+    good = [n for n, r in tested.items() if r == "good"]
+    dull = [n for n, r in tested.items() if r == "dull"]
+    untested = [n for n in range(1, batch["total"] + 1) if n not in tested]
+    batch["finished"] = True
+    summary = {"finished": True, "asset_id": asset["id"], "good": good, "dull": dull, "not_tapped": untested,
+               "total": batch["total"]}
+    dull_text = f"{len(dull)} dull ({word} {', '.join(map(str, dull))})" if dull else "none dull"
+    st.add_timeline(f"Finished tap test on {asset['name']}: {len(good)} good, {dull_text}, {len(untested)} not tapped",
+                    "done", {"tool": "finish_tap_batch", "args": {"asset_id": asset["id"]}, "result": summary})
+    svc.bus.changed()
+    note = (f"The worker finished the tap test on {asset['name']} ({asset['id']}): good {word}s {good or 'none'}, dull "
+            f"{word}s {dull or 'none'}, not tapped {untested or 'none'}. Tell them the result in one or two sentences.")
+    if dull:
+        out = svc.pack.vocabulary.get("out_of_service", "take it out of service")
+        hold = svc.pack.vocabulary.get("quarantine", "hold the batch")
+        note += (f" Because of the dull {word}(s), recommend that we {out if 'wheel' in word else hold}, then call "
+                 "request_confirmation with steps such as update_asset_status or quarantine_batch, notify_people (the "
+                 "right people for this site) and log_inspection, and ask the worker.")
+    else:
+        note += " Log the inspection as passed."
+    return summary, note
+

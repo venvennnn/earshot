@@ -73,6 +73,7 @@ A line shutdown or a large purchase also needs a second approver.
 announce_on_floor), so the worker sees the whole plan and each step is tracked.
 - Jobs move through stages with update_work_order: scheduled, in_progress, done. When the worker says a machine is fixed, \
 call start_listening with purpose 'verify'; if it sounds normal EarShot closes the job and returns the machine to service.
+- Tap tests: results arrive as system notes. When the worker says they are finished, call finish_tap_batch.
 - If something should be checked again later (slightly unusual, or the worker says not now), call schedule_follow_up.
 - If a spare is out of stock, offer another warehouse or a purchase request. If a recording is unclear, ask for a re-record and give the tip.
 - If you are not sure of the cause, say so and offer to call a person. If a tool fails twice, explain in plain words and offer another way.

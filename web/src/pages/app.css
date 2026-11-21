@@ -548,3 +548,19 @@
   padding-top: max(16px, env(safe-area-inset-top));
   overflow-y: auto;
 }
+
+/* optional live call on tool pages */
+.voice-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.voice-strip.live {
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--voice-tint);
+}
+.voice-strip.live .btn {
+  margin-left: auto;
+}
