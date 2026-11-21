@@ -211,7 +211,7 @@ cd web && npm install
 
 Agora's cloud must reach your backend over HTTPS. Start a tunnel and put its URL in `.env` as `PUBLIC_BACKEND_URL`:
 ```bash
-cloudflared tunnel --url http://localhost:8000      # or: ngrok http 8000
+cloudflared tunnel --url http://127.0.0.1:8000      # or: ngrok http 8000
 ```
 
 Then start everything (MCP server :8101, backend :8000, web :5173):
