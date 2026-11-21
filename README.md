@@ -27,7 +27,7 @@ Browser ⇠ RTM ⇠ live transcripts, agent speaking state, latency metrics (ago
 ```
 
 - **Agora integration:** the backend uses Agora's official Python SDK (`agora-agents`) to start, stop and speak through agents. REST calls are signed with the App ID and Certificate, so no Customer ID or Secret is needed. Browser tokens (RTC and RTM) come from the same SDK. The agent runs with interruption on (`start_of_speech`), a 120 s idle timeout and the RTM data channel turned on.
-- **Murf integration:** Murf Falcon is a built-in Agora TTS vendor (`vendor: "murf"`, `model: "FALCON"`), so no TTS adapter is needed. The agent's voice is picked from Murf's own voice list (`GET /v1/speech/voices?model=FALCON`) for the session's locale and cached. You can pin one with `MURF_AGENT_VOICE`.
+- **Murf integration:** Murf Falcon is a built-in Agora TTS vendor (`vendor: "murf"`, `model` from `MURF_MODEL`, default `falcon-2.1`), so no TTS adapter is needed. The agent's voice is picked from Murf's own voice list (`GET /v1/speech/voices`) for the session's locale and cached. You can pin one with `MURF_AGENT_VOICE`.
 - **Custom LLM:** Agora calls `${PUBLIC_BACKEND_URL}/v1/chat/completions?session=<channel>` with our secret as a Bearer key. EarShot keeps the conversation history per channel and streams back only the spoken text.
 
 ## Run locally

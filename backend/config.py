@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # Murf
     murf_api_key: SecretStr = SecretStr("")
     murf_region_url: str = "https://global.api.murf.ai"
+    # Murf Falcon model version (Murf's current example uses "falcon-2.1").
+    murf_model: str = "falcon-2.1"
     # Optional: pin the agent's Murf voice (e.g. "en-IN-aarav"). Otherwise picked from Murf's voice list.
     murf_agent_voice: str = ""
 

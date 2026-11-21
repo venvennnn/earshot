@@ -79,7 +79,7 @@ class AgentManager:
                     key=s.murf_api_key.get_secret_value(),
                     voice_id=voice.murf_voice_id,
                     locale=voice.murf_locale,
-                    model="FALCON",
+                    model=s.murf_model,
                 )
             )
         )

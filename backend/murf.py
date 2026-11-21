@@ -3,8 +3,9 @@
 Phase 2 scope: pick voices from Murf's own voice list (never hard-coded guesses) and cache
 the choice per locale. Direct synthesis (alerts, announcements, shift report) is added later.
 
-API facts (from Murf's official SDK, v2.3.0): auth header `api-key`; `GET /v1/speech/voices?model=FALCON`
-on the default API host returns objects with `voiceId`, `locale`, `displayName`, `gender`, `supportedLocales`.
+API facts (Murf's official SDK v2.3.0 and Murf's Falcon example): auth header `api-key`; model
+version string such as "falcon-2.1" (MURF_MODEL); voice IDs may be an actor name ("Namrita") or a
+full ID ("en-US-natalie"). `GET /v1/speech/voices?model=...` on the default API host returns objects with `voiceId`, `locale`, `displayName`, `gender`, `supportedLocales`.
 The regional host (MURF_REGION_URL, e.g. global.api.murf.ai) is used for low-latency synthesis.
 """
 
@@ -19,7 +20,6 @@ from config import Settings
 
 log = logging.getLogger("earshot.murf")
 
-FALCON = "FALCON"
 MURF_API_BASE = "https://api.murf.ai"  # SDK default host for account-level calls such as the voice list
 
 
@@ -48,9 +48,9 @@ class MurfClient:
 
     async def voices(self) -> list[dict[str, Any]]:
         if self._voices is None:
-            res = await self._get_voices({"model": FALCON})
-            if res.status_code == 400:  # some accounts reject the model filter; list all voices instead
-                log.warning("Murf rejected the Falcon voice filter (%s); listing all voices", res.text[:200])
+            res = await self._get_voices({"model": self._settings.murf_model})
+            if res.status_code == 400:  # the voice list may not accept this model filter; list all voices instead
+                log.warning("Murf rejected the voice filter (%s); listing all voices", res.text[:200])
                 res = await self._get_voices({})
             if res.is_error:
                 raise MurfError(f"Could not list Murf voices ({res.status_code}): {res.text[:300]}")
