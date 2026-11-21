@@ -408,6 +408,253 @@ i.unset {
   color: var(--text-2);
 }
 
+/* healthy ring vs this tap */
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.compare-head h2 {
+  margin: 0;
+}
+.compare-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.compare-chart {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.compare-chart header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.compare-chart header div {
+  display: flex;
+  flex-direction: column;
+}
+.compare-chart header strong {
+  font-weight: 400;
+}
+.compare-chart header span,
+.compare-chart header em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+.compare-chart header em {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--voice-tint);
+  color: var(--voice);
+}
+.compare-chart.dull header em,
+.compare-chart .compare-mark.dull {
+  background: var(--sound-tint);
+  color: var(--sound-text);
+}
+.compare-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--voice-tint);
+  color: var(--voice);
+  font-size: 14px;
+}
+.compare-plot {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 6px;
+}
+.compare-yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  height: 132px;
+}
+.compare-canvas svg {
+  width: 100%;
+  height: 132px;
+  display: block;
+}
+.compare-grid {
+  stroke: #eef0f3;
+  stroke-width: 1;
+}
+.compare-zero {
+  stroke: #d5d9e0;
+  stroke-width: 1;
+}
+.compare-wave.good {
+  fill: #2b54d4;
+  opacity: 0.9;
+}
+.compare-wave.dull {
+  fill: #e58a12;
+  opacity: 0.95;
+}
+.compare-playhead {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.compare-xaxis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+.compare-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+.compare-modes {
+  display: flex;
+  background: var(--page);
+  border-radius: 999px;
+  padding: 2px;
+}
+.compare-modes button,
+.compare-play button,
+.compare-rate select {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--text-2);
+}
+.compare-modes button.on {
+  background: var(--ink);
+  color: white;
+}
+.compare-volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.compare-volume input {
+  width: 90px;
+}
+.compare-play {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.compare-go {
+  width: 42px;
+  height: 42px;
+  border-radius: 50% !important;
+  background: var(--ink) !important;
+  color: white !important;
+  padding: 0 !important;
+}
+.compare-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-left: auto;
+}
+.compare-rate select {
+  border: 1px solid var(--line);
+  min-height: 36px;
+}
+.compare-inspect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+.compare-inspect > div:first-child {
+  display: flex;
+  flex-direction: column;
+}
+.compare-inspect > div:first-child span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.compare-steps {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 220px;
+}
+.compare-steps li {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.compare-steps li:not(:last-child)::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: #d7dbe3;
+}
+.compare-steps button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #c5cad3;
+  background: white;
+  color: var(--muted);
+  font: inherit;
+  flex: none;
+}
+.compare-steps button.good {
+  background: var(--voice);
+  border-color: var(--voice);
+  color: white;
+}
+.compare-steps button.dull {
+  border-color: var(--sound);
+  color: var(--sound-text);
+  background: white;
+}
+.compare-steps button.sel {
+  box-shadow: 0 0 0 3px #f3d7a8;
+}
+.compare-flag {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-sm);
+  background: var(--sound-tint);
+  color: var(--sound-text);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.compare-flag strong {
+  font-weight: 400;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 /* timeline */
 .db-timeline {
   list-style: none;
