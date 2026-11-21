@@ -88,5 +88,5 @@ export const api = {
   packs: () => call<{ active: string; packs: { id: string; name: string }[] }>('/api/packs'),
   setJobStatus: (jobId: string, status: Exclude<JobStatus, 'open'>) =>
     call<Job>(`/api/jobs/${encodeURIComponent(jobId)}/status`, json({ status })),
-  writeReport: () => call<{ text: string; audio_url: string | null }>('/api/report', { method: 'POST' }),
+  writeReport: () => call<{ text: string; audio_url: string | null; ts: number }>('/api/report', { method: 'POST' }),
 };

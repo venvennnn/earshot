@@ -8,6 +8,8 @@ import logging
 import time
 from typing import Any
 
+from openai import APIError
+
 from mcp_client import ToolFailed
 from murf import MurfError
 from packs import LANGUAGE_NAMES
@@ -274,34 +276,64 @@ async def announce(svc: Services, message: str, at: str) -> None:
     svc.bus.changed()
 
 
+def _shift_handover(svc: Services, notes: str) -> str:
+    st = svc.state
+    tiles = st.tiles()
+    lines = [
+        f"{svc.pack.shift} handover for {svc.pack.line} at {svc.pack.plant}. "
+        f"Machines checked: {tiles['machines_checked']}. Problems found: {tiles['problems_caught']}. "
+        f"Decisions awaiting approval: {tiles['waiting_for_yes']}."
+    ]
+    if tiles["problem_assets"]:
+        lines.append("Machines flagged: " + ", ".join(_asset_name(svc, key) for key in tiles["problem_assets"]) + ".")
+    recent = [event["text"] for event in st.timeline if event["status"] == "done"][-4:]
+    if recent:
+        lines.append("Recent activity: " + ". ".join(item.rstrip(".") for item in recent) + ".")
+    jobs = [job for job in st.jobs if job["status"] not in {"done", "cancelled", "closed"}]
+    lines.append("Open jobs: " + (", ".join(
+        f"{job.get('jira_key') or job['id']} ({job['title']})" for job in jobs
+    ) + "." if jobs else "none recorded."))
+    reminders = [f"{f['asset_name']} — {f['when']}: {f['note']}" for f in st.followups if f["status"] == "open"]
+    if reminders:
+        lines.append("Next shift: " + ". ".join(item.rstrip(".") for item in reminders) + ".")
+    if notes.strip():
+        lines.append(f"Worker notes: {notes.strip()}")
+    return "\n\n".join(lines)
+
+
 async def write_report(svc: Services, notes: str = "", file: bool = True) -> dict[str, Any]:
     """Compose the shift report from what happened, read it with Murf, and keep it for the dashboard.
     `file=False` when the LLM already filed it through the generate_report tool."""
     st = svc.state
-    events = "\n".join(f"- {time.strftime('%H:%M', time.localtime(t['ts']))} {t['text']}" for t in st.timeline
-                       if t["status"] == "done")
-    tiles = st.tiles()
-    text = await complete(
-        svc,
-        "You write the spoken handover report for the next shift. Plain spoken English, about 120 words, no lists or "
-        "markdown. Cover: machines checked, problems found and what was done, which jobs are still open (say ticket "
-        "numbers), what is waiting, and the reminders the next shift must do first. Only use the facts given.",
-        f"{svc.pack.plant}, {svc.pack.line}, {svc.pack.shift}.\nCounts: {tiles}\nWhat happened:\n{events or '- nothing'}\n"
-        f"Jobs: {[(j['id'], j.get('jira_key'), j['title'], j['status']) for j in st.jobs]}\n"
-        f"Reminders for the next shift: {[(f['asset_name'], f['when'], f['note']) for f in st.followups if f['status'] == 'open']}\n"
-        f"Notes from the worker: {notes}",
-    )
+    pack = svc.pack
+    fallback = _shift_handover(svc, notes)
+    integrations = svc.settings.integrations()
+    text = fallback
+    if integrations["llm"]:
+        try:
+            text = await asyncio.wait_for(complete(
+                svc,
+                "Write a short spoken English handover for the next shift. Use only the provided facts, "
+                "include open job IDs and reminders, and avoid markdown.",
+                fallback,
+            ), timeout=8) or fallback
+        except (APIError, TimeoutError, IndexError) as exc:
+            log.warning("Using the recorded shift data for the report (%s)", type(exc).__name__)
     report: dict[str, Any] = {"text": text, "audio_url": None, "ts": time.time()}
+    if svc.pack is pack:
+        st.report = report
+        svc.bus.changed()
     if file:
         try:
-            await svc.enterprise.call("generate_report", {"summary": text})
-        except Exception as exc:
+            await asyncio.wait_for(svc.enterprise.call("generate_report", {"summary": text}), timeout=8)
+        except (ToolFailed, TimeoutError) as exc:
             log.warning("Report filing failed: %s", exc)
-    try:
-        audio = await svc.murf.synthesize(text, "en", kind="report", role=1)
-        report["audio_url"] = audio["url"]
-    except MurfError as exc:
-        log.error("Report voice failed: %s", exc)
-    st.report = report
-    svc.bus.changed()
+    if integrations["murf"]:
+        try:
+            audio = await asyncio.wait_for(svc.murf.synthesize(text, "en", kind="report", role=1), timeout=12)
+            report["audio_url"] = audio["url"]
+            if st.report is report:
+                svc.bus.changed()
+        except (MurfError, TimeoutError) as exc:
+            log.warning("Report voice unavailable: %s", exc)
     return report

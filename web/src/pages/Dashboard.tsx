@@ -318,41 +318,67 @@ function Timeline({ live }: { live: LiveState }) {
 
 function Briefing({ live }: { live: LiveState }) {
   const [writing, setWriting] = useState(false);
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState<boolean | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState('');
+  const [written, setWritten] = useState<LiveState['report']>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const report = live.report;
-  const toggle = () => {
+  const report = live.report && (!written || live.report.ts >= written.ts) ? live.report : written;
+  const showText = reading ?? !report?.audio_url;
+  const toggle = async () => {
     const a = audioRef.current;
     if (!a) return;
-    if (a.paused) void a.play();
-    else a.pause();
+    setError('');
+    if (!a.paused) {
+      a.pause();
+      return;
+    }
+    try {
+      await a.play();
+    } catch {
+      setError('Could not play the briefing. The text is available below.');
+      setReading(true);
+    }
+  };
+  const write = async () => {
+    setWriting(true);
+    setError('');
+    setPlaying(false);
+    setProgress(0);
+    setReading(null);
+    audioRef.current?.pause();
+    try {
+      setWritten(await api.writeReport());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not write the shift report.');
+    } finally {
+      setWriting(false);
+    }
   };
   return (
     <section className="db-card db-brief">
-      {report?.audio_url ? (
+      {report?.audio_url && (
         <>
-          <button className="play-btn" aria-label={playing ? 'Pause' : 'Play shift briefing'} onClick={toggle}>{playing ? '❚❚' : '▶'}</button>
-          <audio ref={audioRef} src={mediaUrl(report.audio_url)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+          <button className="play-btn" aria-label={playing ? 'Pause' : 'Play shift briefing'} onClick={() => void toggle()}>{playing ? '❚❚' : '▶'}</button>
+          <audio key={report.audio_url} ref={audioRef} src={mediaUrl(report.audio_url)} onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
             onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime / (e.currentTarget.duration || 1))} />
         </>
-      ) : (
-        <span className="play-btn off">▶</span>
       )}
       <div className="db-brief-text">
         <strong>{report ? "Tonight's shift briefing" : 'Shift briefing'}</strong>
-        <span>{report ? `Written at ${timeOf(report.ts)} · read by Murf Falcon` : 'Not written yet'}</span>
+        <span>{report ? `Written at ${timeOf(report.ts)} · ${report.audio_url ? 'read by Murf Falcon' : 'text briefing'}` : 'Not written yet'}</span>
       </div>
-      <div className="db-progress"><span style={{ width: `${progress * 100}%` }} /></div>
-      {report ? (
-        <button className="link-btn" onClick={() => setReading((v) => !v)}>{reading ? 'Hide text' : 'Read it instead'}</button>
-      ) : (
-        <button className="btn" disabled={writing} onClick={async () => { setWriting(true); try { await api.writeReport(); } finally { setWriting(false); } }}>
-          {writing ? 'Writing…' : 'Write the shift report'}
-        </button>
+      {report?.audio_url && <div className="db-progress"><span style={{ width: `${progress * 100}%` }} /></div>}
+      {report && (
+        <button className="link-btn" onClick={() => setReading(!showText)}>{showText ? 'Hide text' : 'Read briefing'}</button>
       )}
-      {reading && report && <p className="db-brief-full">{report.text}</p>}
+      <button className="btn" disabled={writing} onClick={() => void write()}>
+        {writing ? 'Writing…' : report ? 'Update shift report' : 'Write the shift report'}
+      </button>
+      {error && <p className="error-text" role="alert">{error}</p>}
+      {showText && report && <p className="db-brief-full">{report.text}</p>}
     </section>
   );
 }
@@ -389,7 +415,7 @@ export default function Dashboard() {
           {asset && <TapCompare live={live} asset={asset} part={part} onPart={setPart} />}
           <div className="db-grid db-bottom">
             <Conversations live={live} />
-            <Briefing live={live} />
+            <Briefing key={live.pack?.id} live={live} />
           </div>
         </>
       ) : (

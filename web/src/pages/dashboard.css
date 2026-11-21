@@ -799,9 +799,6 @@ i.unset {
   font-size: 15px;
   flex: none;
 }
-.play-btn.off {
-  background: var(--line);
-}
 .db-brief-text {
   display: flex;
   flex-direction: column;
@@ -834,6 +831,7 @@ i.unset {
 }
 .db-brief-full {
   flex-basis: 100%;
+  white-space: pre-wrap;
   font-size: 15px;
   line-height: 1.5;
   color: var(--text-2);
