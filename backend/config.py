@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = "gemini-3.8-flash"
     embedding_model: str = "gemini-embedding-001"
-    # Lower reasoning keeps voice replies fast. Empty string = don't send the parameter.
-    llm_reasoning_effort: str = "low"
+    # Optional reasoning_effort for the LLM (e.g. "low"); empty = provider default (not sent).
+    llm_reasoning_effort: str = ""
 
     # Shared secret Agora sends to our custom LLM endpoint. Generated per process when unset.
     agent_llm_key: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
@@ -59,6 +59,11 @@ class Settings(BaseSettings):
 
     # Browser origins allowed to call the API (comma-separated). Add your Vercel domain in production.
     cors_origins: str = "http://localhost:5173"
+
+    # Industry pack loaded at startup (packs/<id>.yaml).
+    default_pack: str = "manufacturing"
+    # Where baselines, clips, the case library and generated audio live (mount a volume here in production).
+    store_dir: str = "store"
 
     demo_mode: bool = False
 

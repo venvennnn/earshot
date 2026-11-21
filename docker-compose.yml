@@ -1,0 +1,36 @@
+# Local stack: MCP enterprise server + backend + web dev server.
+#   cp .env.example .env   (fill in keys)
+#   docker compose up --build
+# Agora's cloud still needs a public HTTPS URL for the backend: run a tunnel to localhost:8000
+# and set PUBLIC_BACKEND_URL in .env (see README).
+services:
+  mcp:
+    build: ./mcp_servers/enterprise
+    environment:
+      PORT: "8101"
+    ports: ["8101:8101"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      MCP_ENTERPRISE_URL: http://mcp:8101/mcp
+      CORS_ORIGINS: http://localhost:5173
+    volumes:
+      - ./backend/store:/app/backend/store
+    ports: ["8000:8000"]
+    depends_on: [mcp]
+
+  web:
+    image: node:22-alpine
+    working_dir: /web
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_BACKEND_URL: http://localhost:8000
+    volumes:
+      - ./web:/web
+      - /web/node_modules
+    ports: ["5173:5173"]
+    depends_on: [backend]

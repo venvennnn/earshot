@@ -1,0 +1,75 @@
+id: railways
+name: Railways
+plant: Coach care depot
+line: Pit line 2
+shift: Night shift
+language: en
+
+worker:
+  name: Arjun
+  role: carriage & wagon technician
+  language: en
+
+assets:
+  - {id: C-4401, name: Coach 4401, type: coach wheelset, line: Pit line 2, modes: [tap], parts: 8}
+  - {id: C-4402, name: Coach 4402, type: coach wheelset, line: Pit line 2, modes: [tap], parts: 8}
+  - {id: AC-4401, name: Coach 4401 air conditioning, type: coach air conditioning, line: Pit line 2, modes: [continuous]}
+  - {id: AC-4402, name: Coach 4402 air conditioning, type: coach air conditioning, line: Pit line 2, modes: [continuous]}
+  - {id: DG-1, name: Power car generator DG-1, type: generator, line: Pit line 2, modes: [continuous, alarm]}
+
+fault_vocab:
+  coach wheelset: [a cracked wheel, a loose tyre]
+  coach air conditioning: [a worn compressor bearing, a blocked condenser fan, a refrigerant leak]
+  generator: [a worn bearing, a loose mounting, an injector knock]
+  default: [a worn bearing, a loose part]
+
+fault_parts:
+  a cracked wheel: wheel
+  a worn compressor bearing: compressor bearing
+  a blocked condenser fan: condenser fan motor
+  a worn bearing: bearing
+
+alarm_codes:
+  "L L S": {meaning: Generator coolant temperature high, action: Reduce load and check the radiator}
+  "S S S": {meaning: Low fuel pressure, action: Check the fuel filter}
+
+vocabulary:
+  out_of_service: mark the coach sick
+  work_order: repair memo
+  quarantine: withdraw the wheel set
+
+thresholds:
+  slightly_unusual: 0.4
+  very_unusual: 0.7
+
+hours_saved_per_early_catch: 3.0
+
+policy:
+  tiers:
+    identify_asset: 0
+    get_asset_history: 0
+    check_inventory: 0
+    log_inspection: 0
+    register_asset: 0
+    reserve_part: 1
+    notify_people: 1
+    announce_on_floor: 1
+    generate_report: 1
+    create_work_order: 2
+    update_asset_status: 2
+    quarantine_batch: 2
+    shutdown_line: 3
+    request_purchase: 1
+  purchase_limit_inr: 50000
+
+people:
+  - {name: Control room, role: Train control, language: hi, approver: true}
+  - {name: Lakshmi, role: Depot supervisor, language: ta, approver: true}
+  - {name: Imran, role: Wheel shop, language: en}
+
+announcement_language: en
+
+knowledge:
+  - railway_wheel_examination_sop.md
+  - lockout_tagout_sop.md
+  - past_cases.md

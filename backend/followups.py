@@ -1,0 +1,222 @@
+"""What happens after a tool runs: plain-language timeline, live twin state, and Murf voice follow-ups
+(multilingual briefings to people, floor announcements, the spoken shift report)."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Any
+
+from murf import MurfError
+from packs import LANGUAGE_NAMES
+from services import Services
+
+log = logging.getLogger("earshot.followups")
+
+
+def _asset_name(svc: Services, asset_id: str) -> str:
+    return svc.state.assets.get(str(asset_id).upper(), {}).get("name", str(asset_id))
+
+
+def sentence(svc: Services, name: str, args: dict[str, Any], result: dict[str, Any]) -> str | None:
+    """Plain sentence for the 'What EarShot did' timeline (None = not worth showing)."""
+    a = _asset_name(svc, args.get("asset_id", ""))
+    match name:
+        case "identify_asset":
+            return f"Found {result['name']} on {result.get('line', 'the line')}" if result.get("found") else None
+        case "start_listening":
+            return f"Started listening to {a}" if result.get("ok") else None
+        case "get_asset_history":
+            return f"Checked its history: last serviced {result['last_serviced']}" if "last_serviced" in result else None
+        case "find_similar_cases":
+            wos = result.get("matching_work_orders") or []
+            return (f"Found a similar problem: {_asset_name(svc, wos[0]['asset_id'])}, {wos[0].get('when', '')}"
+                    if wos else "Looked for similar past problems: none found")
+        case "check_inventory":
+            if not result.get("found"):
+                return f"Looked for {args.get('part')}: not in the stores list"
+            return f"Checked spares: {result['total']} {result['name']} in stock" if result["in_stock"] else \
+                f"Checked spares: no {result['name']} in stock"
+        case "reserve_part":
+            return f"Set aside {result['quantity']} {result['name']} in {result['warehouse']}" if result.get("reserved") \
+                else f"Could not set aside {args.get('part')}: out of stock"
+        case "create_work_order":
+            return f"Raised repair job {result['id']} for {a}, {result['priority']} priority"
+        case "update_asset_status":
+            return f"Marked {a} as {result['status']}"
+        case "quarantine_batch":
+            return f"Put {a} on hold"
+        case "shutdown_line":
+            return f"Shut down {args.get('line')}"
+        case "request_purchase":
+            return f"Raised purchase request {result['id']} for {args.get('part')}"
+        case "notify_people":
+            return f"Contacting {', '.join(args.get('people', []))}"
+        case "announce_on_floor":
+            return "Announced it on the floor"
+        case "generate_report":
+            return "Wrote the shift report"
+        case "log_inspection":
+            return f"Logged the result for {a}"
+        case "register_asset":
+            return f"Added {result['name']} to the asset list"
+        case "record_feedback":
+            return f"Learned the confirmed cause for {a}" if result.get("saved") else None
+        case "search_knowledge" | "assess_risk" | "enroll_baseline" | "request_confirmation" | "analyze_sound":
+            return None
+    return None
+
+
+def intent(svc: Services, name: str, args: dict[str, Any]) -> str:
+    """What a tool call would do, as a plain phrase for a confirmation question."""
+    a = _asset_name(svc, args.get("asset_id", ""))
+    return {
+        "create_work_order": f"raise a repair job for {a}",
+        "update_asset_status": f"mark {a} as {args.get('status', 'changed')}",
+        "quarantine_batch": f"put {a} on hold",
+        "shutdown_line": f"shut down {args.get('line', 'the line')}",
+        "request_purchase": f"buy {args.get('quantity', '')} {args.get('part', 'parts')}".replace("  ", " "),
+    }.get(name, name.replace("_", " "))
+
+
+async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any], result: dict[str, Any], tier: int) -> None:
+    """Update the twin and trigger voice follow-ups after a successful tool call."""
+    st = svc.state
+    text = sentence(svc, name, args, result)
+    if text:
+        st.add_timeline(text, "done", {"tool": name, "args": args, "result": result, "tier": tier})
+    if tier >= 1:
+        st.actions_done += 1
+    asset_id = str(args.get("asset_id", "")).upper()
+    facts = st.facts.setdefault(asset_id, {}) if asset_id else {}
+
+    match name:
+        case "get_asset_history" if "last_serviced" in result:
+            facts["last_serviced"] = result["last_serviced"]
+        case "check_inventory" if result.get("found"):
+            focus = asset_id or (st.sessions.get(session_id, {}).get("focus") or "")
+            if focus:
+                st.facts.setdefault(focus, {})["spare"] = f"{result['total']} in stock" if result["in_stock"] else "out of stock"
+        case "create_work_order":
+            st.jobs.append(result)
+            asset = st.assets.get(asset_id)
+            if asset and asset["state"] == "problem":
+                asset["label"] = f"{asset['label'].split(' · ')[0]} · job raised"
+        case "update_asset_status":
+            status = str(result.get("status", "")).lower()
+            if any(w in status for w in ("out of service", "sick", "stopped", "locked", "shut")):
+                st.set_asset_state(asset_id, "out", result["status"].capitalize())
+            elif "running" in status or "fit" in status:
+                st.set_asset_state(asset_id, "normal")
+            else:
+                st.set_asset_state(asset_id, "problem", result["status"].capitalize())
+        case "quarantine_batch":
+            st.set_asset_state(asset_id, "out", "On hold")
+        case "register_asset":
+            st.add_asset({"id": result["asset_id"], "name": result["name"], "type": result["type"],
+                          "line": result.get("line", ""), "modes": ["continuous"], "parts": 0})
+        case "notify_people":
+            for n in result.get("notifications", []):
+                asyncio.create_task(brief_person(svc, n["person"], n["message"], session_id, notification_id=n["id"]))
+        case "announce_on_floor":
+            asyncio.create_task(announce(svc, args["message"], args.get("at", "now")))
+        case "generate_report":
+            asyncio.create_task(write_report(svc, notes=args.get("summary", ""), file=False))
+    svc.bus.changed()
+
+
+async def complete(svc: Services, system: str, user: str) -> str:
+    """One plain LLM completion (no tools)."""
+    started = time.perf_counter()
+    res = await svc.llm.chat.completions.create(
+        model=svc.settings.llm_model,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.3,
+        max_tokens=600,
+    )
+    svc.metrics.add_llm(time.perf_counter() - started)
+    return (res.choices[0].message.content or "").strip()
+
+
+async def brief_person(svc: Services, person_name: str, message: str, session_id: str, notification_id: str = "",
+                       approval_for: str = "") -> dict[str, Any]:
+    """Brief one person in their own language: a Murf Falcon voice message, shown on their recipient page."""
+    person = svc.pack.person(person_name)
+    language = person.language if person else "en"
+    contact = {
+        "id": svc.state.next_id("c"), "name": person.name if person else person_name,
+        "role": person.role if person else "", "language": language,
+        "language_name": LANGUAGE_NAMES.get(language, language), "kind": "call", "status": "Calling…",
+        "message": message, "text": "", "audio_url": None, "reply": None, "notification_id": notification_id,
+        "approval_for": approval_for, "session": session_id, "ts": time.time(),
+    }
+    svc.state.contacts.append(contact)
+    svc.bus.changed()
+    try:
+        contact["text"] = await complete(
+            svc,
+            "You write short spoken voice messages from EarShot, a maintenance assistant, to factory or depot staff. "
+            f"Write in {LANGUAGE_NAMES.get(language, 'English')} only, in natural spoken style, under 60 words. "
+            "Say who is calling, what happened, and what you need from them. No markdown.",
+            f"Recipient: {contact['name']} ({contact['role']}). Worker on the floor: {svc.pack.worker.name}. "
+            f"Message: {message}" + (" Ask them to approve or decline." if approval_for else
+                                     " Ask them to reply if they need to."),
+        )
+        audio = await svc.murf.synthesize(contact["text"], language, kind="briefing", role=2)
+        contact["audio_url"] = audio["url"]
+        contact["status"] = "Waiting for reply" if approval_for else "Told"
+    except Exception as exc:  # LLM or Murf failed: keep whatever text we have
+        log.error("Briefing for %s failed: %s", person_name, exc)
+        contact["text"] = contact["text"] or message
+        contact["status"] = "Sent as text"
+    svc.bus.changed()
+    await svc.bus.emit("briefing", name=contact["name"], contact_id=contact["id"])
+    return contact
+
+
+async def announce(svc: Services, message: str, at: str) -> None:
+    lang = svc.pack.announcement_language
+    contact = {"id": svc.state.next_id("c"), "name": "Floor speakers", "role": "Announcement", "language": lang,
+               "language_name": LANGUAGE_NAMES.get(lang, lang), "kind": "announcement", "status": f"At {at}",
+               "message": message, "text": message, "audio_url": None, "reply": None, "ts": time.time()}
+    svc.state.contacts.append(contact)
+    try:
+        audio = await svc.murf.synthesize(f"Attention please. {message}", lang, kind="announcement", role=3)
+        contact["audio_url"] = audio["url"]
+        await svc.bus.emit("play_audio", target="dashboard", url=audio["url"], label="Floor announcement")
+    except MurfError as exc:
+        log.error("Announcement voice failed: %s", exc)
+        contact["status"] = "Text only (voice failed)"
+    svc.bus.changed()
+
+
+async def write_report(svc: Services, notes: str = "", file: bool = True) -> dict[str, Any]:
+    """Compose the shift report from what happened, read it with Murf, and keep it for the dashboard.
+    `file=False` when the LLM already filed it through the generate_report tool."""
+    st = svc.state
+    events = "\n".join(f"- {time.strftime('%H:%M', time.localtime(t['ts']))} {t['text']}" for t in st.timeline
+                       if t["status"] == "done")
+    tiles = st.tiles()
+    text = await complete(
+        svc,
+        "You write the spoken handover report for the next shift. Plain spoken English, about 120 words, no lists or "
+        "markdown. Cover: machines checked, problems found and what was done, what is waiting, and what the next "
+        "shift must do first. Only use the facts given.",
+        f"{svc.pack.plant}, {svc.pack.line}, {svc.pack.shift}.\nCounts: {tiles}\nWhat happened:\n{events or '- nothing'}\n"
+        f"Open jobs: {[j['id'] + ' ' + j['title'] for j in st.jobs]}\nNotes from the worker: {notes}",
+    )
+    report: dict[str, Any] = {"text": text, "audio_url": None, "ts": time.time()}
+    if file:
+        try:
+            await svc.enterprise.call("generate_report", {"summary": text})
+        except Exception as exc:
+            log.warning("Report filing failed: %s", exc)
+    try:
+        audio = await svc.murf.synthesize(text, "en", kind="report", role=1)
+        report["audio_url"] = audio["url"]
+    except MurfError as exc:
+        log.error("Report voice failed: %s", exc)
+    st.report = report
+    svc.bus.changed()
+    return report

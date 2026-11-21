@@ -1,0 +1,47 @@
+{
+  "manufacturing": {
+    "assets": {
+      "P-07": {"name": "Pump P-07", "type": "pump", "line": "Line 3", "status": "retired", "last_serviced": "March (WO-2291)", "notes": "Bearing failure in March, WO-2291."},
+      "P-11": {"name": "Pump P-11", "type": "pump", "line": "Line 3", "status": "running", "last_serviced": "3 months ago"},
+      "P-12": {"name": "Pump P-12", "type": "pump", "line": "Line 3", "status": "running", "last_serviced": "5 months ago"},
+      "P-13": {"name": "Pump P-13", "type": "pump", "line": "Line 3", "status": "running", "last_serviced": "6 months ago"},
+      "P-14": {"name": "Pump P-14", "type": "pump", "line": "Line 3", "status": "running", "last_serviced": "8 months ago"},
+      "CV-1": {"name": "Conveyor CV-1", "type": "conveyor", "line": "Line 3", "status": "running", "last_serviced": "1 month ago"},
+      "CV-2": {"name": "Conveyor CV-2", "type": "conveyor", "line": "Line 3", "status": "running", "last_serviced": "1 month ago"},
+      "CP-2": {"name": "Compressor CP-2", "type": "compressor", "line": "Line 3", "status": "running", "last_serviced": "2 months ago"},
+      "M-07": {"name": "Motor M-07", "type": "motor", "line": "Line 3", "status": "running", "last_serviced": "new installation"},
+      "CB-2231": {"name": "Casting batch 2231", "type": "casting", "line": "Line 3", "status": "in inspection", "last_serviced": "cast yesterday"}
+    },
+    "work_orders": [
+      {"id": "WO-2291", "asset_id": "P-07", "title": "Drive-end bearing failure", "priority": "emergency", "status": "closed", "when": "March", "cause": "worn bearing", "downtime_hours": 7.5, "summary": "Grinding sound for a week, bearing seized on night shift. Replaced bearing, seal and shaft sleeve."},
+      {"id": "WO-2407", "asset_id": "P-11", "title": "Bearing change", "priority": "planned", "status": "closed", "when": "3 months ago", "cause": "planned maintenance", "downtime_hours": 2.0, "summary": "Planned bearing change."},
+      {"id": "WO-2188", "asset_id": "P-14", "title": "Lubrication and coupling check", "priority": "routine", "status": "closed", "when": "8 months ago", "cause": "routine", "downtime_hours": 0.5, "summary": "Routine lubrication; coupling OK."},
+      {"id": "WO-1987", "asset_id": "P-03", "title": "Cavitation: strainer blocked", "priority": "high", "status": "closed", "when": "last year", "cause": "cavitation", "downtime_hours": 0.0, "summary": "Suction strainer cleared without stopping."}
+    ],
+    "inventory": [
+      {"code": "BRG-6309", "name": "bearing 6309-2Z", "keywords": ["bearing", "drive end bearing", "6309"], "stock": {"Main stores": 2, "Warehouse B": 4}, "unit_cost_inr": 3200},
+      {"code": "SEAL-80", "name": "mechanical seal 80 mm", "keywords": ["seal", "mechanical seal"], "stock": {"Main stores": 0, "Warehouse B": 3}, "unit_cost_inr": 14500},
+      {"code": "CPL-80", "name": "coupling insert 80", "keywords": ["coupling", "coupling insert"], "stock": {"Main stores": 4}, "unit_cost_inr": 900},
+      {"code": "IMP-80", "name": "impeller 80", "keywords": ["impeller"], "stock": {"Main stores": 1}, "unit_cost_inr": 22000},
+      {"code": "RLR-25", "name": "conveyor roller bearing", "keywords": ["roller bearing", "roller"], "stock": {"Main stores": 6}, "unit_cost_inr": 650},
+      {"code": "VLV-CP2", "name": "compressor valve kit", "keywords": ["valve kit", "valve"], "stock": {"Main stores": 0, "Warehouse B": 0}, "unit_cost_inr": 68000}
+    ]
+  },
+  "railways": {
+    "assets": {
+      "C-4401": {"name": "Coach 4401", "type": "coach wheelset", "line": "Pit line 2", "status": "fit", "last_serviced": "examined 12 days ago"},
+      "C-4402": {"name": "Coach 4402", "type": "coach wheelset", "line": "Pit line 2", "status": "fit", "last_serviced": "examined 12 days ago"},
+      "AC-4401": {"name": "Coach 4401 air conditioning", "type": "coach air conditioning", "line": "Pit line 2", "status": "running", "last_serviced": "1 month ago"},
+      "AC-4402": {"name": "Coach 4402 air conditioning", "type": "coach air conditioning", "line": "Pit line 2", "status": "running", "last_serviced": "4 months ago"},
+      "DG-1": {"name": "Power car generator DG-1", "type": "generator", "line": "Pit line 2", "status": "running", "last_serviced": "2 months ago"}
+    },
+    "work_orders": [
+      {"id": "RM-3318", "asset_id": "C-3318", "title": "Wheel set replacement, position 3", "priority": "emergency", "status": "closed", "when": "January", "cause": "a cracked wheel", "downtime_hours": 30.0, "summary": "Dull note on ring test, crack confirmed at rim. Coach marked sick."}
+    ],
+    "inventory": [
+      {"code": "WS-915", "name": "wheel set 915 mm", "keywords": ["wheel", "wheel set", "wheelset"], "stock": {"Depot stores": 1, "Central stores": 6}, "unit_cost_inr": 285000},
+      {"code": "CMP-BRG", "name": "AC compressor bearing", "keywords": ["compressor bearing", "bearing"], "stock": {"Depot stores": 0, "Central stores": 2}, "unit_cost_inr": 5400},
+      {"code": "CFM-24", "name": "condenser fan motor", "keywords": ["condenser fan", "fan motor"], "stock": {"Depot stores": 2}, "unit_cost_inr": 12800}
+    ]
+  }
+}

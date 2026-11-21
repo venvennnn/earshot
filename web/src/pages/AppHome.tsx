@@ -1,11 +1,9 @@
 import { Link } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
 import { BottomNav } from '../components/BottomNav';
-import { EraserIcon, ListIcon, MicIcon, PlusCircleIcon, SoundIcon } from '../components/Icons';
+import { ChevronRightIcon, EraserIcon, ListIcon, MicIcon, PlusCircleIcon, SoundIcon } from '../components/Icons';
+import { useLive } from '../lib/events';
 import './app.css';
-
-// The worker's name and shift come from the active industry pack from Phase 5 on.
-const WORKER = { name: 'Ravi', where: 'Line 3 · Night shift' };
 
 function greeting(now: Date): string {
   const h = now.getHours();
@@ -21,14 +19,24 @@ const STEPS = [
 ] as const;
 
 export default function AppHome() {
+  const { live, connected } = useLive();
+  const pack = live?.pack;
+  const tapAsset = live?.assets.find((a) => a.modes.includes('tap'));
+  const waiting = live?.confirmations.filter((c) => c.status === 'pending' || c.status === 'second_approval') ?? [];
+  const attention = live?.assets.filter((a) => a.state === 'problem' || a.state === 'watch' || a.state === 'out') ?? [];
+  const openJobs = (live?.jobs.length ?? 0) + waiting.length;
+
   return (
     <div className="phone">
       <main className="phone-body">
         <header className="app-greeting">
           <LogoMark size={30} />
           <div>
-            <h1>{greeting(new Date())}, {WORKER.name}</h1>
-            <p>{WORKER.where}</p>
+            <h1>
+              {greeting(new Date())}
+              {pack ? `, ${pack.worker.name}` : ''}
+            </h1>
+            <p>{pack ? `${pack.line} · ${pack.shift}` : connected ? 'Loading…' : 'Connecting to EarShot…'}</p>
           </div>
         </header>
 
@@ -45,7 +53,7 @@ export default function AppHome() {
             <SoundIcon />
             <span>Check a machine</span>
           </Link>
-          <Link to="/app/tap" className="shortcut">
+          <Link to={tapAsset ? `/app/tap?asset=${tapAsset.id}` : '/app/tap'} className="shortcut">
             <EraserIcon />
             <span>Tap test parts</span>
           </Link>
@@ -55,13 +63,42 @@ export default function AppHome() {
           </Link>
           <Link to="/app/jobs" className="shortcut">
             <ListIcon />
-            <span>My open jobs</span>
+            <span>
+              My open jobs{openJobs > 0 && <span className="count"> · {openJobs}</span>}
+            </span>
           </Link>
         </div>
 
         <section>
           <h2 className="app-section-title">Needs attention</h2>
-          <p className="empty-note">Nothing needs your attention right now.</p>
+          {waiting.length === 0 && attention.length === 0 ? (
+            <p className="empty-note">Nothing needs your attention right now.</p>
+          ) : (
+            <div className="attention-list">
+              {waiting.map((c) => (
+                <Link key={c.id} to={`/app/result?asset=${c.asset_id}&session=${c.session}`} className="attention problem">
+                  <span className="dot" />
+                  <span>
+                    <strong>{c.asset_name}</strong>
+                    <span className="muted">{c.question} · waiting for your OK</span>
+                  </span>
+                  <ChevronRightIcon />
+                </Link>
+              ))}
+              {attention
+                .filter((a) => !waiting.some((c) => c.asset_id === a.id))
+                .map((a) => (
+                  <Link key={a.id} to={`/app/result?asset=${a.id}`} className={`attention ${a.state === 'watch' ? 'watch' : 'problem'}`}>
+                    <span className="dot" />
+                    <span>
+                      <strong>{a.name}</strong>
+                      <span className="muted">{a.label}</span>
+                    </span>
+                    <ChevronRightIcon />
+                  </Link>
+                ))}
+            </div>
+          )}
         </section>
 
         <ol className="steps-strip">

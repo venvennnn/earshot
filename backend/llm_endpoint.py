@@ -8,6 +8,7 @@ final spoken text: tool calls are resolved inside the orchestrator and never ret
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import time
 import uuid
@@ -20,6 +21,21 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from agora.convoai import SESSION_HEADER
 from config import Settings
 from orchestrator import Orchestrator
+
+_SENTENCE = re.compile(r"(?<=[.!?।])\s+")
+
+
+def latest_user_text(messages: list[dict[str, Any]]) -> str | None:
+    """Text of the newest user message in an OpenAI-format message list."""
+    for msg in reversed(messages):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):  # content parts
+            return " ".join(p.get("text", "") for p in content if isinstance(p, dict)).strip()
+    return None
 
 
 def _chunk(completion_id: str, model: str, delta: dict[str, str], finish: str | None = None) -> str:
@@ -53,12 +69,13 @@ def build_router(settings: Settings, orchestrator: Orchestrator) -> APIRouter:
         channel = session or session_header
         if not channel:
             raise HTTPException(status_code=400, detail="Missing session")
-        messages = body.get("messages") or []
+        user_text = latest_user_text(body.get("messages") or [])
         model = str(body.get("model") or settings.llm_model)
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+        session = orchestrator.sessions.get(channel, "voice")
 
         if not body.get("stream", False):
-            text = "".join([part async for part in orchestrator.reply(channel, messages)])
+            text = await orchestrator.run_turn(session, user_text=user_text)
             return JSONResponse(
                 {
                     "id": completion_id,
@@ -73,8 +90,9 @@ def build_router(settings: Settings, orchestrator: Orchestrator) -> APIRouter:
 
         async def events() -> AsyncIterator[str]:
             yield _chunk(completion_id, model, {"role": "assistant"})
-            async for part in orchestrator.reply(channel, messages):
-                yield _chunk(completion_id, model, {"content": part})
+            text = await orchestrator.run_turn(session, user_text=user_text)
+            for sentence in _SENTENCE.split(text):  # sentence chunks let Agora start speaking sooner
+                yield _chunk(completion_id, model, {"content": sentence + " "})
             yield _chunk(completion_id, model, {}, finish="stop")
             yield "data: [DONE]\n\n"
 

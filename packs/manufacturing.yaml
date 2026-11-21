@@ -1,0 +1,88 @@
+id: manufacturing
+name: Factory
+plant: Hosur plant
+line: Line 3
+shift: Night shift
+language: en
+
+worker:
+  name: Ravi
+  role: technician
+  language: en
+
+assets:
+  - {id: P-11, name: Pump P-11, type: pump, line: Line 3, modes: [continuous]}
+  - {id: P-12, name: Pump P-12, type: pump, line: Line 3, modes: [continuous]}
+  - {id: P-13, name: Pump P-13, type: pump, line: Line 3, modes: [continuous]}
+  - {id: P-14, name: Pump P-14, type: pump, line: Line 3, modes: [continuous]}
+  - {id: CV-1, name: Conveyor CV-1, type: conveyor, line: Line 3, modes: [continuous]}
+  - {id: CV-2, name: Conveyor CV-2, type: conveyor, line: Line 3, modes: [continuous]}
+  - {id: CP-2, name: Compressor CP-2, type: compressor, line: Line 3, modes: [continuous, alarm]}
+  - {id: M-07, name: Motor M-07, type: motor, line: Line 3, modes: [continuous]}
+  - {id: CB-2231, name: Casting batch 2231, type: casting, line: Line 3, modes: [tap], parts: 12}
+
+fault_vocab:
+  pump: [a worn bearing, misalignment, cavitation, a loose impeller, a leak or blockage]
+  conveyor: [a dry roller bearing, belt slip, a misaligned belt]
+  compressor: [a valve leak, a worn bearing, a loose mounting]
+  motor: [a worn bearing, an electrical hum, rotor imbalance]
+  casting: [a crack, porosity]
+  default: [a worn bearing, a loose part, an air leak]
+
+# Repair part for each likely cause: used to check spares after a diagnosis.
+fault_parts:
+  a worn bearing: bearing
+  misalignment: coupling
+  cavitation: mechanical seal
+  a loose impeller: impeller
+  a dry roller bearing: roller bearing
+  a valve leak: valve kit
+
+alarm_codes:
+  "L L S": {meaning: Compressor discharge temperature high, action: Stop the compressor and check the cooler fan}
+  "S S S": {meaning: Low oil pressure, action: Check the oil level before restarting}
+  "L S": {meaning: Filter blocked, action: Replace the intake filter at the next stop}
+
+vocabulary:
+  out_of_service: take it out of service
+  work_order: repair job
+  quarantine: hold the batch
+
+thresholds:
+  slightly_unusual: 0.4
+  very_unusual: 0.7
+
+# Shown on the dashboard as an estimate, labelled "estimated".
+hours_saved_per_early_catch: 1.75
+
+policy:
+  tiers:
+    identify_asset: 0
+    get_asset_history: 0
+    check_inventory: 0
+    log_inspection: 0
+    register_asset: 0
+    reserve_part: 1
+    notify_people: 1
+    announce_on_floor: 1
+    generate_report: 1
+    create_work_order: 2
+    update_asset_status: 2
+    quarantine_batch: 2
+    shutdown_line: 3
+    request_purchase: 1
+  purchase_limit_inr: 50000
+
+people:
+  - {name: Suresh, role: Shift supervisor, language: hi, approver: true}
+  - {name: Kavya, role: Stores, language: ta}
+  - {name: Meena, role: Maintenance planner, language: en}
+
+announcement_language: en
+
+knowledge:
+  - pump_manual.md
+  - lockout_tagout_sop.md
+  - asset_history_line3.md
+  - casting_tap_test_sop.md
+  - past_cases.md

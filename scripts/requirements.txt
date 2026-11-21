@@ -1,0 +1,2 @@
+# Extra dependency for scripts/eval_mimii.py (chart). Install on top of backend/requirements.txt.
+matplotlib==3.11.2

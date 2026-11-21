@@ -1,6 +1,8 @@
 """Start, stop and speak through Agora Conversational AI agents (official `agora-agents` SDK).
 
 Pipeline per agent: Agora ARES ASR -> our custom LLM endpoint -> Murf Falcon TTS (Agora built-in vendor).
+Transcripts reach the UI through EarShot's own WebSocket (the backend sees every turn), so the agent does
+not need Agora RTM.
 """
 
 from __future__ import annotations
@@ -59,9 +61,6 @@ class AgentManager:
                 client=self._client,
                 turn_detection={"language": voice.asr_language},
                 interruption={"enable": True, "mode": "start_of_speech"},
-                # RTM data channel: live transcripts, agent state and metrics in the browser.
-                advanced_features={"enable_rtm": True},
-                parameters={"data_channel": "rtm", "enable_metrics": True, "enable_error_message": True},
             )
             .with_stt(AresSTT())
             .with_llm(
