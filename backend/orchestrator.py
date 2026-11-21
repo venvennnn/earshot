@@ -36,7 +36,7 @@ MAX_TOOL_ROUNDS = 8
 NOTE_PREFIX = "[EarShot system note, not the worker speaking]"
 TAP_BASELINE = re.compile(
     r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?(?:can you\s+)?"
-    r"(?:(?:set(?: up)?|record|replace|re[ -]?record)\s+)?"
+    r"(?:(?:create|make|set(?: up)?|start recording|record|replace|re[ -]?record)\s+)?"
     r"(?:(?:a|the)\s+)?(?:(?:tap|tapping|wheel)\s+)?(?:baseline|reference)"
     r"(?:\s+(?:for|on|of))?(?:\s+(?P<asset>.+))?$",
     re.IGNORECASE,
@@ -49,9 +49,16 @@ START_CAPTURE = re.compile(
 )
 MACHINE_CHECK = re.compile(
     r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?"
-    r"(?:(?P<tap>tap(?:[ -]test)?)|check(?:ing)?|listen to)\s+(?:the\s+)?(?:sound of\s+)?",
+    r"(?:(?P<tap>tap(?:[ -]test(?:ing)?)?)|check(?:ing)?|listen to)"
+    r"(?:\s+(?:(?:the|on|for)\s+)?(?:sound of\s+)?|$)",
     re.IGNORECASE,
 )
+SPEECH_LEAD = re.compile(
+    r"^(?:(?:uh+|um+|first|okay|ok|well|no)[, ]+|(?:let's|let us|i want you to)\s+)+",
+    re.IGNORECASE,
+)
+TAP_ACTIVITY = re.compile(r"^(?:do\s+)?(?:the\s+)?(?:(railway|railways)\s+)?tap[ -]test(?:ing)?$", re.IGNORECASE)
+TAP_SELECTION = re.compile(r"^(?:do\s+)?(?:use|select|choose)\s+(?:the\s+)?(.+)$", re.IGNORECASE)
 FALLBACK = "Sorry, I couldn't think that through just now. Please say it again."
 
 
@@ -192,16 +199,53 @@ class Orchestrator:
 
     async def _machine_check(self, session: Session, text: str) -> str:
         """Handle direct requests to listen even if the model or its tool schema is unavailable."""
-        text = text.strip().rstrip(" .!?")
+        text = text.strip().rstrip(" .!?").replace("’", "'")
+        original = text
+        text = SPEECH_LEAD.sub("", text)
+        assets = self.svc.state.assets
+        tap_assets = {key: asset for key, asset in assets.items() if "tap" in asset.get("modes", [])}
+        offered = tap_assets.get(session.offered_tap_asset or "")
+        session.offered_tap_asset = None
+
+        activity = TAP_ACTIVITY.fullmatch(text)
+        selection = TAP_SELECTION.fullmatch(text)
+        if selection:
+            matches = match_assets(list(tap_assets.values()), selection[1])
+        else:
+            matches = [asset for asset in tap_assets.values()
+                       if text.casefold() in (asset["name"].casefold(), asset["id"].casefold())]
+        if len(matches) == 1:
+            return self._select_tap_asset(session, matches[0])
+        if offered and spoken_decision(original) == "yes":
+            return self._select_tap_asset(session, offered)
+        if offered and original.casefold() in {"no", "nope", "not now"}:
+            return "Okay. Which wheelset or batch should we use?"
+        if activity:
+            railway_requested = bool(activity[1])
+            if railway_requested and self.svc.pack.id != "railways":
+                switch = "Railway wheelsets are in the Railways industry. Switch to Railways on the dashboard to test a coach."
+                if len(tap_assets) == 1:
+                    alternative = next(iter(tap_assets.values()))
+                    session.offered_tap_asset = alternative["id"]
+                    return f"{switch} Use {alternative['name']} here instead?"
+                return switch
+            if focused := tap_assets.get(session.focus_asset or ""):
+                return self._select_tap_asset(session, focused)
+            if len(tap_assets) == 1:
+                alternative = next(iter(tap_assets.values()))
+                session.offered_tap_asset = alternative["id"]
+                return f"Use {alternative['name']} for the tap test?"
+            names = ", ".join(asset["name"] for asset in list(tap_assets.values())[:4])
+            return f"Which wheelset or batch should we use? Choose {names}." if names else "There are no tap-test assets in this industry."
+
         baseline = TAP_BASELINE.fullmatch(text)
         start = START_CAPTURE.fullmatch(text)
         command = MACHINE_CHECK.match(text)
         if not baseline and not command and not start:
             return ""
         tap_requested = bool(baseline or (command and command.group("tap")))
-        assets = self.svc.state.assets
         if tap_requested:
-            assets = {key: asset for key, asset in assets.items() if "tap" in asset.get("modes", [])}
+            assets = tap_assets
         direct = baseline or start
         target = (direct.group("asset") or "") if direct else text[command.end():]
         if target.lower() in {"", "it", "that", "this machine", "this coach"}:
@@ -243,6 +287,14 @@ class Orchestrator:
             return (f"{asset['name']} needs a healthy recording first. "
                     "When it's running normally, say start recording.")
         return str(result.get("message") or result.get("error") or "Tap Listen to machine to try again.")
+
+    def _select_tap_asset(self, session: Session, asset: dict[str, Any]) -> str:
+        session.focus_asset = asset["id"]
+        self.svc.state.sessions.setdefault(session.id, {})["focus"] = asset["id"]
+        self.svc.bus.changed()
+        if asset.get("tap_reference_url"):
+            return f"{asset['name']} is selected. Say start recording to test it, or create a baseline to replace the reference."
+        return f"{asset['name']} is selected. Say create a baseline when you have a known-good part ready."
 
     async def _carry_out(self, session: Session) -> list[str]:
         """Run every approved step that is still waiting, so a yes raises the job even if the model skips it."""

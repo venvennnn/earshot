@@ -92,3 +92,32 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.emit.assert_any_await(
             "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="enroll"
         )
+
+    async def test_factory_tap_conversation_keeps_casting_batch_context(self):
+        async def say(text):
+            return await self.orchestrator.run_turn(self.session, user_text=text)
+
+        reply = await say("Uh, let's do the railway tap testing.")
+        self.assertIn("Switch to Railways", reply)
+        self.assertIn("Casting batch 2231", reply)
+        self.assertIn("Casting batch 2231", await say("Let's do tap testing."))
+        self.assertIn("Casting batch 2231", await say("Let's do tap test."))
+        self.assertIn("Casting batch 2231 is selected", await say("Yes, correct."))
+        self.assertIn("Casting batch 2231 is selected", await say("No, I want you to use the casting batch 2231."))
+        self.assertFalse(any(call.args[0] == "capture_start" for call in self.emit.await_args_list))
+
+        reply = await say("Uh, first let's create a baseline.")
+        self.assertIn("baseline for Casting batch 2231", reply)
+        self.assertIn("after the beep", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="CB-2231", mode="tap", purpose="enroll"
+        )
+
+    async def test_generic_railway_tap_request_asks_which_coach(self):
+        pack = load_pack("railways")
+        self.orchestrator.svc.pack = pack
+        self.orchestrator.svc.state.load_pack(pack, set())
+        reply = await self.orchestrator.run_turn(self.session, user_text="Let's do the railway tap testing.")
+        self.assertIn("Coach 4401", reply)
+        self.assertIn("Coach 4402", reply)
+        self.assertFalse(any(call.args[0] == "capture_start" for call in self.emit.await_args_list))

@@ -19,6 +19,7 @@ class Session:
     language: str = "en"
     messages: list[dict[str, Any]] = field(default_factory=list)
     focus_asset: str | None = None
+    offered_tap_asset: str | None = None
     last_analysis: dict[str, str] = field(default_factory=dict)  # asset_id -> analysis id
     granted: dict[str, float] = field(default_factory=dict)  # tool -> allowed until (epoch s)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
