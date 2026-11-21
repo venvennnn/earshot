@@ -90,6 +90,7 @@ export default function Jobs() {
               <p className="muted">
                 {asset?.name ?? j.asset_id} · {j.priority} priority{j.scheduled_for ? ` · ${j.scheduled_for}` : ''}
               </p>
+              {j.jira_error && <p className="error-text">{j.jira_error}</p>}
               <div className="tap-actions">
                 {j.status !== 'in_progress' ? (
                   <button className="btn btn-lg" disabled={busy === j.id} onClick={() => start(j)}>Start job</button>

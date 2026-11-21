@@ -126,6 +126,14 @@ async def health() -> dict[str, object]:
     }
 
 
+@app.get("/api/integrations/jira")
+async def jira_connection() -> dict[str, object]:
+    try:
+        return await svc.enterprise.call("admin_jira_connection", {})
+    except ToolFailed as exc:
+        raise HTTPException(status_code=503, detail="The enterprise server could not check Jira.") from exc
+
+
 @app.get("/api/state")
 async def get_state() -> dict[str, Any]:
     return svc.bus.snapshot()

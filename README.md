@@ -177,7 +177,8 @@ Switching the industry in the dashboard reloads the twin, resets the mock enterp
 
 **Optional Jira Cloud sync:**
 - **Turn it on:** set `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` and `JIRA_PROJECT` (read by the MCP server). If any is missing, Jira is simply off and nothing else changes.
-- **New jobs:** every new repair job is also created as a Jira issue (REST API v3) with:
+- **Check the connection:** restart the MCP service after setting its variables, then open **Jira setup** on the dashboard and select **Test connection**. The check verifies the account has Create Issues permission and creates no ticket. Set `JIRA_ISSUE_TYPE` if your project uses a type other than `Task`.
+- **New jobs:** every new approved repair job is also created as a Jira issue (REST API v3) with:
   - summary `P-14: <title>` and the priority mapped across
   - labels `earshot` and the asset id
   - a description with what EarShot heard, how sure it is, the similar case, a link to the recording, the schedule and who approved it

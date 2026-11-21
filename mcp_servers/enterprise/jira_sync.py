@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -32,14 +33,26 @@ class Jira:
     def __init__(self) -> None:
         values = {k: os.environ.get(k, "").strip() for k in REQUIRED}
         missing = [k for k, v in values.items() if not v]
+        self.missing = missing
         self.enabled = not missing
         if missing and len(missing) < len(REQUIRED):
             log.warning("Jira sync is off: missing %s", ", ".join(missing))
         if not self.enabled:
             return
         self.site = values["JIRA_SITE"].rstrip("/")
-        if not self.site.startswith("http"):
+        if "://" not in self.site:
             self.site = f"https://{self.site}"
+        try:
+            site = urlsplit(self.site)
+            valid_site = (site.scheme == "https" and site.hostname and
+                          not (site.username or site.password or site.path or site.query or site.fragment))
+        except ValueError:
+            valid_site = False
+        if not valid_site:
+            self.enabled = False
+            self.missing = ["JIRA_SITE (HTTPS site origin)"]
+            log.warning("Jira sync is off: JIRA_SITE must be an HTTPS site origin")
+            return
         self.project = values["JIRA_PROJECT"]
         self.issue_type = os.environ.get("JIRA_ISSUE_TYPE", "Task")
         self._auth = (values["JIRA_EMAIL"], values["JIRA_API_TOKEN"])
@@ -51,6 +64,24 @@ class Jira:
 
     def url(self, key: str) -> str:
         return f"{self.site}/browse/{key}"
+
+    async def connection_status(self) -> dict[str, Any]:
+        if not self.enabled:
+            return {"status": "not_configured", "missing": self.missing}
+        try:
+            async with self._client() as client:
+                response = await client.get("/mypermissions", params={
+                    "projectKey": self.project, "permissions": "CREATE_ISSUES",
+                })
+                response.raise_for_status()
+                allowed = response.json()["permissions"]["CREATE_ISSUES"]["havePermission"]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return {"status": "error", "project": self.project,
+                    "message": "Could not verify Jira. Check the site, project, credentials and network access."}
+        if not allowed:
+            return {"status": "error", "project": self.project,
+                    "message": "The Jira account does not have Create Issues permission for this project."}
+        return {"status": "connected", "project": self.project}
 
     async def create(self, wo: dict[str, Any], details: list[str]) -> dict[str, Any]:
         if not self.enabled:

@@ -25,6 +25,11 @@ export interface TurnReply {
   audio_url?: string | null;
 }
 
+export type JiraConnection =
+  | { status: 'not_configured'; missing: string[] }
+  | { status: 'connected'; project: string }
+  | { status: 'error'; project: string; message: string };
+
 export interface ClipResponse extends TurnReply {
   session: string;
   result: Analysis & Record<string, unknown>;
@@ -53,6 +58,7 @@ const json = (body: unknown): RequestInit => ({
 });
 
 export const api = {
+  jiraConnection: () => call<JiraConnection>('/api/integrations/jira'),
   startSession: (kind: 'voice' | 'app' = 'voice', language = 'en') =>
     call<VoiceSession | AppSession>('/api/session', json({ kind, language })),
   endSession: (id: string) =>

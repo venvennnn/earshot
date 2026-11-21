@@ -851,3 +851,15 @@ i.unset {
   color: var(--text-2);
   font-size: 13px;
 }
+
+.db-jira {
+  padding-block: 12px;
+}
+.db-jira summary {
+  cursor: pointer;
+  color: var(--voice);
+}
+.db-jira p,
+.db-jira button {
+  margin-top: 8px;
+}

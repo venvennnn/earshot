@@ -366,6 +366,12 @@ def admin_integrations() -> dict[str, Any]:
 
 
 @server.tool()
+async def admin_jira_connection() -> dict[str, Any]:
+    """Backend only: check whether the configured account can create Jira issues."""
+    return await jira.connection_status()
+
+
+@server.tool()
 def admin_inject_failure(tool: str, times: int = 1) -> dict[str, Any]:
     """Backend only: make the next `times` calls to `tool` fail, to demo error handling."""
     store.failures[tool] = times

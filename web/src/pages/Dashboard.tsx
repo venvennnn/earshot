@@ -4,7 +4,7 @@ import { Logo } from '../components/Logo';
 import { CheckIcon, SoundIcon } from '../components/Icons';
 import { SpectrumChart, UnusualBar } from '../components/Bits';
 import { useLive, useLiveEvent } from '../lib/events';
-import { api, mediaUrl } from '../lib/api';
+import { api, mediaUrl, type JiraConnection } from '../lib/api';
 import { playAudio } from '../lib/audio';
 import { AssetHistoryPanel } from '../components/AssetHistory';
 import { TapCompare } from '../components/TapCompare';
@@ -12,6 +12,45 @@ import type { Asset, Contact, LiveEvent, LiveState } from '../lib/types';
 import './dashboard.css';
 
 const STATE_DOT: Record<string, string> = { normal: 'ok', watch: 'watch', problem: 'problem', out: 'problem', unset: 'unset' };
+
+function JiraSettings({ project }: { project?: string | null }) {
+  const [result, setResult] = useState<JiraConnection | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState('');
+
+  const check = async () => {
+    setChecking(true);
+    setError('');
+    setResult(null);
+    try {
+      setResult(await api.jiraConnection());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check Jira.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <details className="db-card db-jira">
+      <summary>Jira {project ? `· ${project}` : 'setup'}</summary>
+      <p>Approved repair jobs automatically create tickets in the configured Jira Cloud project.</p>
+      <p className="muted small">
+        Set <code>JIRA_SITE</code>, <code>JIRA_EMAIL</code>, <code>JIRA_API_TOKEN</code> and <code>JIRA_PROJECT</code> on the
+        enterprise MCP service, then restart it. Use its secret settings for the token.
+      </p>
+      <button className="btn" disabled={checking} onClick={() => void check()}>
+        {checking ? 'Checking Jira…' : 'Test connection'}
+      </button>
+      <div role="status">
+        {error && <p className="error-text">{error}</p>}
+        {result?.status === 'not_configured' && <p className="muted">Required settings: {result.missing.join(', ')}.</p>}
+        {result?.status === 'connected' && <p className="text-ok">Connected to {result.project}. Create Issues permission confirmed.</p>}
+        {result?.status === 'error' && <p className="error-text">{result.message}</p>}
+      </div>
+    </details>
+  );
+}
 
 function Header({ live, connected, soundOn, onSound }: { live: LiveState | null; connected: boolean; soundOn: boolean; onSound: () => void }) {
   const [packs, setPacks] = useState<{ id: string; name: string }[]>([]);
@@ -37,11 +76,6 @@ function Header({ live, connected, soundOn, onSound }: { live: LiveState | null;
         <span className={`pill ${connected ? 'pill-ok' : 'pill-sound'}`}>
           <span className="dot" /> {connected ? 'EarShot is on' : 'Reconnecting…'}
         </span>
-        {live?.integrations.jira && (
-          <span className="pill pill-voice" title="New repair jobs are also created as Jira issues">
-            Syncing to Jira · {live.integrations.jira_project}
-          </span>
-        )}
         <span className="db-latency" title={tts ? `Measured: LLM reply ${tts.llm_reply_median_s ?? '–'} s + Murf first audio ${tts.murf_ttfa_median_s ?? '–'} s` : ''}>
           {tts?.voice_reply_s != null ? <>Voice reply in <b>{tts.voice_reply_s.toFixed(2)} s</b></> : 'Voice reply: measuring…'}
         </span>
@@ -236,6 +270,9 @@ function Timeline({ live }: { live: LiveState }) {
               <span>{t.text}</span>
               <em>
                 {t.status === 'next' ? 'next' : t.status === 'skipped' ? 'not done' : timeOf(t.ts)}
+                {typeof t.detail.result?.jira_error === 'string' && (
+                  <em className="text-problem">{t.detail.result.jira_error}</em>
+                )}
                 {t.detail.result?.jira_url && (
                   <>
                     {' · '}
@@ -332,6 +369,7 @@ export default function Dashboard() {
   return (
     <div className="db">
       <Header live={live} connected={connected} soundOn={soundOn} onSound={() => setSoundOn(true)} />
+      <JiraSettings project={live?.integrations.jira_project} />
       {live ? (
         <>
           <AttentionBanner live={live} />
