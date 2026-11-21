@@ -71,3 +71,27 @@ export const SoundIcon = ({ size = 24 }: IconProps) => (
     <path d="M11 8a6 6 0 0 1 0 8M15 5a10 10 0 0 1 0 14" />
   </svg>
 );
+
+export const ChevronLeftIcon = ({ size = 22 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M15 6l-6 6 6 6" />
+  </svg>
+);
+
+export const MicOffIcon = ({ size = 24 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M9 9v2a3 3 0 0 0 5.1 2.1M15 10V6a3 3 0 0 0-5.7-1.3M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18" />
+  </svg>
+);
+
+export const CloseIcon = ({ size = 24 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+export const WaveIcon = ({ size = 28 }: IconProps) => (
+  <svg {...base(size)} strokeWidth={2.4}>
+    <path d="M6 10v4M10 7v10M14 9v6M18 11v2" />
+  </svg>
+);

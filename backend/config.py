@@ -7,7 +7,9 @@ Values come from environment variables or a `.env` file in the repo root or
 from __future__ import annotations
 
 import logging
+import secrets
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,8 +29,8 @@ class Settings(BaseSettings):
     # Agora
     agora_app_id: str = ""
     agora_app_certificate: SecretStr = SecretStr("")
-    agora_customer_id: str = ""
-    agora_customer_secret: SecretStr = SecretStr("")
+    # Agora REST gateway region nearest to the backend.
+    agora_area: Literal["US", "EU", "AP"] = "US"
 
     # Public HTTPS URL that Agora's cloud can reach (Railway domain, or ngrok/cloudflared in dev)
     public_backend_url: str = ""
@@ -38,10 +40,17 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = "gemini-3.8-flash"
     embedding_model: str = "gemini-embedding-001"
+    # Lower reasoning keeps voice replies fast. Empty string = don't send the parameter.
+    llm_reasoning_effort: str = "low"
+
+    # Shared secret Agora sends to our custom LLM endpoint. Generated per process when unset.
+    agent_llm_key: SecretStr = Field(default_factory=lambda: SecretStr(secrets.token_urlsafe(32)))
 
     # Murf
     murf_api_key: SecretStr = SecretStr("")
     murf_region_url: str = "https://global.api.murf.ai"
+    # Optional: pin the agent's Murf voice (e.g. "en-IN-aarav"). Otherwise picked from Murf's voice list.
+    murf_agent_voice: str = ""
 
     # MCP enterprise tool server
     mcp_enterprise_url: str = "http://localhost:8101/mcp"
@@ -61,6 +70,11 @@ class Settings(BaseSettings):
             raise ValueError("must start with http:// or https://")
         return v
 
+    @field_validator("agent_llm_key")
+    @classmethod
+    def _generate_llm_key(cls, v: SecretStr) -> SecretStr:
+        return v if v.get_secret_value() else SecretStr(secrets.token_urlsafe(32))
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
@@ -69,7 +83,6 @@ class Settings(BaseSettings):
         """Which integrations have the settings they need (booleans only, never values)."""
         return {
             "agora": bool(self.agora_app_id and self.agora_app_certificate.get_secret_value()),
-            "agora_rest": bool(self.agora_customer_id and self.agora_customer_secret.get_secret_value()),
             "public_url": self.public_backend_url.startswith("https://"),
             "llm": bool(self.llm_api_key.get_secret_value() and self.llm_model),
             "murf": bool(self.murf_api_key.get_secret_value()),
@@ -84,8 +97,6 @@ class Settings(BaseSettings):
             checks |= {
                 "AGORA_APP_ID": bool(self.agora_app_id),
                 "AGORA_APP_CERTIFICATE": bool(self.agora_app_certificate.get_secret_value()),
-                "AGORA_CUSTOMER_ID": bool(self.agora_customer_id),
-                "AGORA_CUSTOMER_SECRET": bool(self.agora_customer_secret.get_secret_value()),
                 "PUBLIC_BACKEND_URL (https)": self.public_backend_url.startswith("https://"),
                 "MURF_API_KEY": bool(self.murf_api_key.get_secret_value()),
             }
