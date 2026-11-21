@@ -1,43 +1,50 @@
 :root {
   /* Type */
-  --font: 'Century Gothic', CenturyGothic, AppleGothic, Questrial, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font: 'DM Sans', system-ui, sans-serif;
+  --display: 'Bricolage Grotesque', var(--font);
+  --mono: 'DM Mono', ui-monospace, monospace;
 
   /* Neutrals */
-  --page: #faf8f5;
+  --page: #f3f9fe;
   --surface: #ffffff;
-  --ink: #1d1b18;
-  --text-2: #4d4740;
-  --muted: #6b655c;
-  --line: #e8e1d9;
+  --ink: #0d1b2a;
+  --text-2: #36465a;
+  --muted: #4b5a6b;
+  --line: #e3ecf3;
+  --line-strong: #c9d7e4;
+  --sky: #dff3ff;
+  --sky-strong: #b8e6ff;
+  --pink: #fde7f4;
+  --lavender: #c4b5fd;
 
   /* Voice: everything about talking and the agent */
-  --voice: #2b54d4;
-  --voice-tint: #dce5fb;
+  --voice: #6d28d9;
+  --voice-hover: #5420aa;
+  --voice-tint: #ede7ff;
 
   /* Sound: everything about listening */
-  --sound: #e58a12;
-  --sound-text: #754400;
-  --sound-tint: #fdebd3;
-  --listen-bg: #1a1510;
+  --sound: #5cc8ff;
+  --sound-text: #085783;
+  --sound-tint: #dff3ff;
+  --listen-bg: #ffffff;
 
   /* Status */
-  --ok: #21623b;
-  --ok-tint: #e4efe6;
-  --problem: #a3291f;
-  --problem-tint: #fbe1dd;
+  --ok: #1b634d;
+  --ok-tint: #e1f4ef;
+  --problem: #9e2458;
+  --problem-tint: #fde7f4;
 
-  --violet: #493977;
-  --violet-tint: #ece7f7;
+  --violet: #562aa1;
+  --violet-tint: #eee8ff;
 
   /* Dark band */
-  --night: #1d1b18;
-  --night-card: #1e232b;
+  --night: #0d1b2a;
+  --night-card: #192b40;
 
   /* Shape */
   --r-sm: 12px;
   --r-md: 18px;
-  --r-lg: 22px;
+  --r-lg: 26px;
   --touch: 44px;
   --btn: 52px;
   --btn-lg: 56px;

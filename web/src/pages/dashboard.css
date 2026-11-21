@@ -1,3 +1,7 @@
+body:has(.db) {
+  background: var(--surface);
+}
+
 .db {
   min-height: 100dvh;
   padding: clamp(14px, 3vw, 32px);
@@ -30,11 +34,11 @@
   align-items: center;
   gap: 16px 24px;
   padding: clamp(16px, 2.4vw, 26px);
-  background: var(--voice-tint);
-  border-color: var(--voice-tint);
+  background: var(--surface);
+  border-color: var(--line);
 }
 .db-header .logo {
-  color: var(--voice);
+  color: var(--ink);
 }
 .db-header .btn,
 .db-select {
@@ -95,14 +99,16 @@
   padding: 14px 16px;
   border-radius: var(--r-md);
   border: 1px solid var(--line);
-  background: var(--sound-tint);
+  background: var(--lavender);
+  border-color: var(--lavender);
 }
 .db-banner > div:nth-child(2) {
   flex: 1;
 }
 .db-banner strong {
-  font-weight: 400;
-  font-size: 18px;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(20px, 2.5vw, 32px);
 }
 .db-banner p {
   font-size: 14px;
@@ -146,24 +152,20 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-color: transparent;
-  background: var(--tile-bg);
+  border-color: var(--line);
+  background: var(--surface);
   color: var(--tile-ink);
 }
 .db-tile-voice {
-  --tile-bg: var(--voice-tint);
   --tile-ink: var(--voice);
 }
 .db-tile-sound {
-  --tile-bg: var(--sound-tint);
   --tile-ink: var(--sound-text);
 }
 .db-tile-ok {
-  --tile-bg: var(--ok-tint);
   --tile-ink: var(--ok);
 }
 .db-tile-violet {
-  --tile-bg: var(--violet-tint);
   --tile-ink: var(--violet);
 }
 .db-tile span {
@@ -171,8 +173,9 @@
   color: var(--text-2);
 }
 .db-tile strong {
-  font-size: clamp(30px, 4vw, 42px);
-  font-weight: 400;
+  font-family: var(--display);
+  font-size: clamp(30px, 4vw, 46px);
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
@@ -252,7 +255,7 @@
   flex: 1;
   height: 20%;
   border-radius: 2px;
-  background: #b9c6ef;
+  background: var(--lavender);
 }
 .db-wave.on span {
   background: var(--voice);
@@ -332,7 +335,7 @@ i.problem {
   background: var(--problem);
 }
 i.unset {
-  background: #b9bec7;
+  background: var(--line-strong);
 }
 .db-assets {
   display: grid;
@@ -360,7 +363,7 @@ i.unset {
 }
 .db-asset.watch {
   background: var(--sound-tint);
-  border-color: #f2c88e;
+  border-color: var(--sky-strong);
 }
 .db-asset.problem,
 .db-asset.out {
@@ -419,7 +422,7 @@ i.unset {
 }
 .db-part.good {
   background: var(--ok-tint);
-  border-color: #cfe7da;
+  border-color: var(--ok-tint);
 }
 .db-part.dull {
   background: var(--problem);
@@ -539,7 +542,7 @@ i.unset {
   stroke-width: 1;
 }
 .compare-zero {
-  stroke: #d5d9e0;
+  stroke: var(--line-strong);
   stroke-width: 1;
 }
 .compare-wave.good {
@@ -655,13 +658,13 @@ i.unset {
   content: '';
   flex: 1;
   height: 2px;
-  background: #d7dbe3;
+  background: var(--line);
 }
 .compare-steps button {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 2px solid #c5cad3;
+  border: 2px solid var(--line-strong);
   background: white;
   color: var(--muted);
   font: inherit;
@@ -678,7 +681,7 @@ i.unset {
   background: white;
 }
 .compare-steps button.sel {
-  box-shadow: 0 0 0 3px #f3d7a8;
+  box-shadow: 0 0 0 3px var(--sky-strong);
 }
 .compare-flag {
   margin: 0;
@@ -742,7 +745,7 @@ i.unset {
   background: var(--sound);
 }
 .db-timeline li.next .tl-icon {
-  border: 1.5px solid #b9bec7;
+  border: 1.5px solid var(--line-strong);
 }
 .db-timeline li.next span {
   color: var(--muted);
@@ -853,6 +856,7 @@ i.unset {
 }
 
 .db-jira {
+  background: var(--page);
   padding-block: 12px;
 }
 .db-jira summary {

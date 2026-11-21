@@ -7,7 +7,7 @@
 html,
 body {
   margin: 0;
-  background: var(--page);
+  background: var(--sky);
   color: var(--ink);
   font-family: var(--font);
   font-size: 16px;
@@ -23,6 +23,14 @@ h4,
 p {
   margin: 0;
   font-weight: 400;
+}
+
+h1,
+h2,
+h3,
+.logo-word {
+  font-family: var(--display);
+  font-weight: 700;
 }
 
 a {
@@ -64,11 +72,12 @@ button {
   gap: 8px;
   min-height: var(--touch);
   padding: 0 18px;
-  border-radius: var(--r-sm);
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   font-size: 15px;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -247,4 +256,20 @@ button {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
+}
+
+.logo svg circle {
+  fill: var(--ink);
+}
+.logo svg path:first-of-type {
+  stroke: var(--sound);
+}
+.logo svg path:last-of-type {
+  stroke: var(--voice);
+}
+.spectrum svg rect:nth-of-type(odd) {
+  fill: var(--sky-strong);
+}
+.spectrum svg rect:nth-of-type(even) {
+  fill: var(--voice);
 }

@@ -109,13 +109,15 @@
 }
 .bubble-line.worker {
   align-self: flex-end;
+  border-bottom-right-radius: 6px;
   background: var(--ink);
   color: #fff;
 }
 .bubble-line.agent {
   align-self: flex-start;
-  background: var(--surface);
-  border: 1.5px solid var(--voice);
+  background: var(--sky);
+  border: 1px solid var(--sky);
+  border-bottom-left-radius: 6px;
 }
 .bubble-line.partial {
   opacity: 0.75;
@@ -222,13 +224,13 @@
   font-size: 16px;
 }
 
-/* --- Listen screen (dark) --- */
+/* --- Listen screen --- */
 .listen {
   position: fixed;
   inset: 0;
   z-index: 30;
   background: var(--listen-bg);
-  color: #fff;
+  color: var(--ink);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -242,15 +244,18 @@
   gap: 8px;
   padding: 8px 16px;
   border-radius: 999px;
-  background: #3a2c1a;
-  color: var(--sound);
+  background: var(--voice-tint);
+  color: var(--voice);
   font-size: 15px;
 }
 .listen-asset {
-  font-size: 32px;
+  font-size: clamp(32px, 9vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: center;
 }
 .listen-sub {
-  color: #d9d2c7;
+  color: var(--muted);
   text-align: center;
 }
 .listen-ring {
@@ -265,12 +270,12 @@
 }
 .ring-bg {
   fill: none;
-  stroke: #3a3128;
+  stroke: var(--line);
   stroke-width: 12;
 }
 .ring-fg {
   fill: none;
-  stroke: var(--sound);
+  stroke: var(--voice);
   stroke-width: 12;
   stroke-linecap: round;
   transition: stroke-dashoffset 120ms linear;
@@ -282,20 +287,20 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #d9d2c7;
+  color: var(--muted);
 }
 .listen-count strong {
   font-size: 64px;
   font-weight: 400;
-  color: #fff;
+  color: var(--ink);
   line-height: 1;
 }
 .spinner {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 4px solid #3a3128;
-  border-top-color: var(--sound);
+  border: 4px solid var(--line);
+  border-top-color: var(--voice);
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin {
@@ -307,13 +312,13 @@
   width: min(100%, 360px);
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid #3a3128;
+  border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: #241d15;
+  background: var(--page);
 }
 .listen-waveform figcaption {
   font-size: 13px;
-  color: #e8e1d6;
+  color: var(--text-2);
 }
 .listen-waveform svg {
   width: 100%;
@@ -325,11 +330,11 @@
   vector-effect: non-scaling-stroke;
 }
 .listen-waveform line {
-  stroke: #5c4936;
+  stroke: var(--sky-strong);
 }
 .listen-waveform path {
   fill: none;
-  stroke: #ffbe68;
+  stroke: var(--voice);
   stroke-width: 1.8px;
   stroke-linecap: round;
 }
@@ -338,10 +343,10 @@
   text-align: center;
 }
 .listen-check.good {
-  color: #9be3b5;
+  color: var(--ok);
 }
 .listen-check.warn {
-  color: #ffb4a8;
+  color: var(--problem);
 }
 .listen-tip {
   width: 100%;
@@ -351,12 +356,12 @@
   align-items: center;
   padding: 12px 14px;
   border-radius: var(--r-md);
-  background: #241d15;
-  color: #e8e1d6;
+  background: var(--page);
+  color: var(--text-2);
   font-size: 15px;
 }
 .tip-icon {
-  color: var(--sound);
+  color: var(--sound-text);
   font-size: 20px;
 }
 .listen-q {
@@ -364,15 +369,15 @@
   max-width: 400px;
   margin: 0 auto;
   width: 100%;
-  color: #d9d2c7;
+  color: var(--muted);
 }
 .listen .segmented {
   width: 100%;
   max-width: 400px;
-  background: #241d15;
+  background: var(--page);
 }
 .listen .segmented button {
-  color: #e8e1d6;
+  color: var(--text-2);
 }
 .listen .segmented .on {
   background: var(--sound);
@@ -381,8 +386,8 @@
 .listen-stop {
   margin-top: auto;
   background: transparent;
-  color: #fff;
-  border-color: #5a4d3d;
+  color: var(--ink);
+  border-color: var(--line-strong);
   border-radius: 999px;
   min-height: var(--btn);
   padding: 0 28px;
@@ -396,7 +401,7 @@
 .link-file {
   border: 0;
   background: none;
-  color: var(--sound);
+  color: var(--sound-text);
   text-decoration: underline;
   font-size: 15px;
   min-height: var(--touch);
