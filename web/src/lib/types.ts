@@ -100,6 +100,7 @@ export interface TapPart {
   decay_ms: number;
   reason: string;
   envelope: number[];
+  clip_url?: string;
 }
 
 export interface TapBatch {
@@ -108,6 +109,7 @@ export interface TapBatch {
   parts: TapPart[];
   good_decay_ms: number;
   good_envelope: number[];
+  good_url?: string;
 }
 
 export interface Person {

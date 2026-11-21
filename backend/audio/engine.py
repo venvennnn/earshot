@@ -125,6 +125,7 @@ class AudioEngine:
             mean = _normalise(embs.mean(axis=0))
             dist = 1 - embs @ mean
             meta = {"mode": "tap", "asset_id": asset_id, "clip_url": clip_url, "taps": len(taps),
+                    "good_tap_url": self.store.save_clip(taps[0].segment, SR),  # one ring, for "good vs this"
                     "good_decay_ms": float(np.median([t.decay_ms for t in taps])),
                     "good_envelope": taps[0].envelope, "enrolled_at": time.time()}
             self.store.save_baseline(asset_id, {"mean": mean, "dist": dist}, meta)
@@ -232,9 +233,11 @@ class AudioEngine:
             dull = short or z > 4.0
             reason = "the ring dies away quickly" if short else "the tone is different" if dull else ""
             results.append({"start": round(tap.start, 2), "decay_ms": round(tap.decay_ms), "distance_z": round(z, 1),
-                            "result": "dull" if dull else "good", "reason": reason, "envelope": tap.envelope})
+                            "result": "dull" if dull else "good", "reason": reason, "envelope": tap.envelope,
+                            "clip_url": self.store.save_clip(tap.segment, SR)})
         return {"ok": True, "asset_id": asset_id, "mode": "tap", "good_decay_ms": round(meta["good_decay_ms"]),
-                "good_envelope": meta["good_envelope"], "taps": results}
+                "good_envelope": meta["good_envelope"], "good_url": meta.get("good_tap_url") or meta["clip_url"],
+                "taps": results}
 
     # --- alarm -----------------------------------------------------------------------------
     @staticmethod

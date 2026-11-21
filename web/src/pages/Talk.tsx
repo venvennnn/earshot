@@ -258,7 +258,7 @@ export default function Talk() {
       )}
 
       {result && !capture && (
-        <div className="overlay" onClick={() => setResult(null)}>
+        <div className="overlay overlay-top" onClick={() => setResult(null)}>
           <div className="overlay-card" onClick={(e) => e.stopPropagation()}>
             <ResultCard analysis={result} facts={live?.facts[result.asset_id]} />
             <button className="btn" onClick={() => setResult(null)}>Close</button>

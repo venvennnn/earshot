@@ -46,6 +46,11 @@ export function ResultCard({ analysis, facts = {} }: Props) {
         {analysis.band === 'very unusual' ? 'Problem found' : analysis.band === 'slightly unusual' ? 'Keep an eye on it' : 'Sounds normal'}
       </span>
       <h2 className="result-title">{title}</h2>
+      {analysis.baseline_url && (
+        <button className="btn" onClick={compare}>
+          {playing ? '■ Stop' : '▶ Hear normal vs now'}
+        </button>
+      )}
       <p className="muted small">How unusual it sounds</p>
       <UnusualBar analysis={analysis} />
       <dl className="facts">
@@ -72,11 +77,6 @@ export function ResultCard({ analysis, facts = {} }: Props) {
           </div>
         )}
       </dl>
-      {analysis.baseline_url && (
-        <button className="btn" onClick={compare}>
-          {playing ? '■ Stop' : '▶ Hear normal vs now'}
-        </button>
-      )}
     </section>
   );
 }

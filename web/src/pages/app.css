@@ -541,3 +541,10 @@
 .job-head a {
   color: var(--voice);
 }
+
+/* result card stays above the confirm sheet */
+.overlay-top {
+  align-items: flex-start;
+  padding-top: max(16px, env(safe-area-inset-top));
+  overflow-y: auto;
+}

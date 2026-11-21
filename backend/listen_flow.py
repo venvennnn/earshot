@@ -126,6 +126,7 @@ async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.n
     batch = st.tap_batches.setdefault(asset["id"], {"asset_id": asset["id"], "total": asset.get("parts") or 12,
                                                      "parts": [], "good_decay_ms": result["good_decay_ms"],
                                                      "good_envelope": result["good_envelope"]})
+    batch["good_url"] = result["good_url"]
     numbers = []
     taps = result["taps"][:1] if part else result["taps"]  # a re-tap of one part counts only its first tap
     for t in taps:

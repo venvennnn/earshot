@@ -7,6 +7,7 @@ import { useLive } from '../lib/events';
 import { useAppSession } from '../lib/useAppSession';
 import { api, type ClipResponse, type TurnReply } from '../lib/api';
 import { playAudio } from '../lib/audio';
+import type { TapBatch, TapPart } from '../lib/types';
 import './app.css';
 import './talk.css';
 
@@ -17,6 +18,22 @@ function Ring({ envelope, tone }: { envelope: number[]; tone: 'good' | 'dull' })
         <span key={i} style={{ height: `${Math.max(6, v * 100)}%` }} />
       ))}
     </span>
+  );
+}
+
+function HearGoodVsThis({ batch, part, word }: { batch: TapBatch; part: TapPart; word: string }) {
+  const [playing, setPlaying] = useState(false);
+  if (!batch.good_url || !part.clip_url) return null;
+  const play = async () => {
+    setPlaying(true);
+    await playAudio(batch.good_url!);
+    await playAudio(part.clip_url!);
+    setPlaying(false);
+  };
+  return (
+    <button className="btn" disabled={playing} onClick={play}>
+      {playing ? 'Playing…' : `▶ Hear good ${word} vs ${word} ${part.n}`}
+    </button>
   );
 }
 
@@ -87,6 +104,7 @@ export default function TapTest() {
                 <span className={`small ${shown.result === 'dull' ? 'text-problem' : ''}`}>{word[0].toUpperCase() + word.slice(1)} {shown.n}</span>
                 <Ring envelope={shown.envelope} tone={shown.result} />
               </div>
+              <HearGoodVsThis batch={batch} part={shown} word={word} />
             </section>
           )
         )}
