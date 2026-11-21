@@ -127,8 +127,9 @@ async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.n
                                                      "parts": [], "good_decay_ms": result["good_decay_ms"],
                                                      "good_envelope": result["good_envelope"]})
     numbers = []
-    for i, t in enumerate(result["taps"]):
-        n = part if (part and i == 0) else len(batch["parts"]) + 1
+    taps = result["taps"][:1] if part else result["taps"]  # a re-tap of one part counts only its first tap
+    for t in taps:
+        n = part or len(batch["parts"]) + 1
         if n > batch["total"]:
             break
         entry = {"n": n, **t}
@@ -139,12 +140,13 @@ async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.n
     good = sum(1 for p in batch["parts"] if p["result"] == "good")
     left = batch["total"] - len(batch["parts"])
     st.checked.add(asset["id"])
+    word = "Wheel" if "wheel" in asset["type"] else "Part"
     if dull:
         st.problems.add(asset["id"])
-        st.set_asset_state(asset["id"], "problem", f"Part {dull[-1]} sounds dull")
+        st.set_asset_state(asset["id"], "problem", f"{word} {dull[-1]} sounds dull")
     else:
         st.set_asset_state(asset["id"], "normal", "All good so far")
-    heard = ", ".join(f"part {p['n']} {p['result']}" + (f" ({p['reason']})" if p["reason"] else "") for p in numbers)
+    heard = ", ".join(f"{word.lower()} {p['n']} {p['result']}" + (f" ({p['reason']})" if p["reason"] else "") for p in numbers)
     st.add_timeline(f"Tap test on {asset['name']}: {heard}", "done",
                     {"tool": "tap_test", "args": {"asset_id": asset["id"]}, "result": {"taps": numbers}})
     svc.bus.changed()
