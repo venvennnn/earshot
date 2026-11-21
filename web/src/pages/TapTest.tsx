@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ListenPanel } from '../components/ListenPanel';
 import { ConfirmSheet } from '../components/ConfirmSheet';
 import { TopBar } from '../components/Bits';
-import { useLive } from '../lib/events';
+import { useLive, useLiveEvent } from '../lib/events';
 import { useAppSession } from '../lib/useAppSession';
 import { useVoiceCall } from '../lib/useVoiceCall';
 import { MicIcon } from '../components/Icons';
@@ -53,7 +53,10 @@ export default function TapTest() {
   const batch = asset ? live?.tap_batches[asset.id] : undefined;
   const pending = live?.confirmations.find((c) => c.session === session && (c.status === 'pending' || c.status === 'second_approval'));
   // During a call EarShot speaks through Agora; show its latest words here too.
-  const lastSpoken = voice.session ? [...(live?.transcript ?? [])].reverse().find((l) => l.session === voice.session && l.who === 'agent') : undefined;
+  const lines = voice.session ? (live?.transcript ?? []).filter((l) => l.session === voice.session) : [];
+  useLiveEvent(useCallback((e) => {
+    if (e.kind === 'play_audio' && e.target === 'session' && e.session && e.session === voice.session) void playAudio(e.url);
+  }, [voice.session]));
 
   const heard = (r: TurnReply) => {
     if (r.reply) setSaid(r.reply);
@@ -106,6 +109,9 @@ export default function TapTest() {
             <>
               <span className="pill pill-ok"><span className="dot" /> Talking to EarShot</span>
               <span className="muted small">Say "yes" or "finish the batch"</span>
+              {voice.needsTap && (
+                <button className="btn btn-voice" onClick={voice.resume}>Tap to hear EarShot</button>
+              )}
               <button className="btn" onClick={() => void voice.stop()}>End call</button>
             </>
           ) : (
@@ -164,12 +170,18 @@ export default function TapTest() {
           <span><b>{total - parts.length}</b> left</span>
         </div>
 
-        {(lastSpoken?.text || said) && (
+        {lines.length > 0 ? (
+          <section className="tap-transcript" aria-live="polite">
+            {lines.slice(-6).map((l) => (
+              <p key={l.id} className={`bubble-line ${l.who}`}>{l.text}</p>
+            ))}
+          </section>
+        ) : said ? (
           <section className="said">
             <span className="said-who">EarShot</span>
-            <p>{lastSpoken?.text || said}</p>
+            <p>{said}</p>
           </section>
-        )}
+        ) : null}
         {error && <p className="error-text">{error}</p>}
 
         {!needsReference && (

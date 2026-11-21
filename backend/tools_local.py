@@ -9,6 +9,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import plan_steps
 from confirmations import open_confirmation
 from mcp_client import ToolFailed
 from services import Services
@@ -154,8 +155,18 @@ async def assess_risk(svc: Services, session: Session, args: dict[str, Any]) -> 
 
 
 async def request_confirmation(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
-    conf = await open_confirmation(svc, session, args["asset_id"].upper(), args["question"],
-                                   list(args.get("steps") or []), list(args.get("tools") or []))
+    asset_id = args["asset_id"].upper()
+    steps = list(args.get("steps") or [])
+    tools = list(args.get("tools") or [])
+    asset = svc.state.assets.get(asset_id, {})
+    # A fault plan must raise the job and record the hold, even if the model left them out.
+    if asset_id in svc.state.problems:
+        batch = svc.state.tap_batches.get(asset_id)
+        finding = plan_steps.finding_text(asset, svc.state.analyses.get(asset_id), batch)
+        steps, tools = plan_steps.ensure_issue_steps(
+            steps, tools, asset, svc.pack.vocabulary, [p.name for p in svc.pack.people], finding,
+            is_tap=bool(batch and batch.get("parts")))
+    conf = await open_confirmation(svc, session, asset_id, args["question"], steps, tools)
     return {"status": "waiting_for_yes", "confirmation_id": conf["id"],
             "instruction": "Ask the worker the question and tell them what you will do if they say yes."}
 
@@ -167,13 +178,13 @@ async def schedule_follow_up(svc: Services, session: Session, args: dict[str, An
 
 
 async def finish_tap_batch(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
-    from listen_flow import finish_tap  # local import: listen_flow imports this module
+    from listen_flow import close_tap_batch  # local import: listen_flow imports this module
 
     asset = svc.state.assets.get(args["asset_id"].upper())
     if asset is None:
         return {"finished": False, "message": "Unknown asset."}
-    summary, note = finish_tap(svc, asset)
-    return {**summary, "instruction": note}
+    summary, note, spoken = await close_tap_batch(svc, session, asset)
+    return {**summary, "instruction": note, "say": spoken}
 
 
 async def record_feedback(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:

@@ -22,6 +22,8 @@ class Session:
     last_analysis: dict[str, str] = field(default_factory=dict)  # asset_id -> analysis id
     granted: dict[str, float] = field(default_factory=dict)  # tool -> allowed until (epoch s)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Set while a person is waiting to be heard, so a sound-result turn lets the conversation through.
+    preempt: asyncio.Event = field(default_factory=asyncio.Event)
     created_at: float = field(default_factory=time.time)
 
     def add(self, message: dict[str, Any]) -> None:

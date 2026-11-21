@@ -48,6 +48,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     const recorder = new Recorder();
     recorderRef.current = recorder;
     let player: HTMLAudioElement | null = null;
+    let mutedMic = false;
     let frame = 0;
     const levels: number[] = [];
     let recentLoud = 0;
@@ -84,6 +85,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       }
       try {
         await onMute?.(true);
+        mutedMic = true;
         await recorder.open();
         frame = requestAnimationFrame(draw);
         setPhase('recording');
@@ -95,7 +97,6 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         const wav = await recorder.record(CLIP_SECONDS, setLeft, abort.signal);
         player?.pause();
         recorder.close();
-        await onMute?.(false);
         if (!wav || abort.signal.aborted) return;
         setPhase('working');
         doneRef.current(await api.uploadClip(wav, { asset_id: asset.id, mode, purpose, session, part }));
@@ -103,9 +104,11 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         if (abort.signal.aborted) return;
         player?.pause();
         recorder.close();
-        await onMute?.(false);
         setError(e instanceof Error ? e.message : 'Could not use the microphone.');
         setPhase('error');
+      } finally {
+        // Give the voice call its microphone back even if the recording was cancelled.
+        if (mutedMic) await onMute?.(false);
       }
     }, 0); // deferred so React StrictMode's double mount doesn't open the mic twice
     return () => {

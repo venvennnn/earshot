@@ -12,6 +12,9 @@ export class VoiceCall {
   private mic: IMicrophoneAudioTrack | null = null;
   private agentAudio: IRemoteAudioTrack | null = null;
   private readonly session: VoiceSession;
+  /** True after the voice mic was disabled for a machine recording. Unmute then replaces the track. */
+  private silenced = false;
+  private micChain: Promise<void> = Promise.resolve();
 
   constructor(session: VoiceSession, onAutoplayBlocked: () => void) {
     this.session = session;
@@ -31,8 +34,13 @@ export class VoiceCall {
       if (String(user.uid) === this.session.agent_uid) this.agentAudio = null;
     });
     await this.rtc.join(app_id, channel, token, uid);
-    this.mic = await AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
+    this.mic = await this.openMic();
     await this.rtc.publish([this.mic]);
+  }
+
+  private openMic(): ReturnType<typeof AgoraRTC.createMicrophoneAudioTrack> {
+    // speech_standard is the preset conversational AI expects. AEC/ANS/AGC stay on for the voice path.
+    return AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: 'speech_standard', AEC: true, ANS: true, AGC: true });
   }
 
   /** 0..1 loudness of the agent's voice. */
@@ -49,9 +57,34 @@ export class VoiceCall {
     this.agentAudio?.play();
   }
 
-  /** Muted while recording a machine so Agora's speech recognition does not hear it. */
+  /** Muted while recording a machine so Agora's speech recognition does not hear it.
+   * The raw recorder takes the device; the published track then stays silent unless it is replaced. */
   async setMuted(muted: boolean): Promise<void> {
-    await this.mic?.setMuted(muted);
+    const run = this.micChain.then(() => this.applyMute(muted));
+    this.micChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async applyMute(muted: boolean): Promise<void> {
+    if (!this.mic) return;
+    if (muted) {
+      this.silenced = true;
+      await this.mic.setEnabled(false);
+      return;
+    }
+    if (!this.silenced) {
+      await this.mic.setEnabled(true);
+      return;
+    }
+    const fresh = await this.openMic();
+    this.silenced = false;
+    const previous = this.mic;
+    this.mic = fresh;
+    if (previous) {
+      await this.rtc.unpublish([previous]).catch(() => undefined);
+      previous.close();
+    }
+    await this.rtc.publish([fresh]);
   }
 
   async leave(): Promise<void> {

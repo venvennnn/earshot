@@ -87,6 +87,20 @@ def intent(svc: Services, name: str, args: dict[str, Any]) -> str:
     }.get(name, name.replace("_", " "))
 
 
+def already_finished(svc: Services, session_id: str, tool: str) -> bool:
+    """True when this tool's step on the latest approved plan is already done (don't run it twice)."""
+    for conf in reversed(svc.state.confirmations):
+        if conf["session"] != session_id or conf["status"] != "approved":
+            continue
+        matched = [s for s in conf["steps"] if s.get("tool") == tool]
+        if not matched:
+            continue
+        if any(s.get("status") == "next" for s in matched):
+            return False
+        return any(s.get("status") == "done" for s in matched)
+    return False
+
+
 def tick_plan_step(svc: Services, session_id: str, tool: str, ok: bool, text: str | None,
                    detail: dict[str, Any]) -> bool:
     """If this tool carries out a step of an approved plan, mark that step done/failed (with what actually

@@ -9,7 +9,9 @@ from typing import Any
 import numpy as np
 
 import followups
+import plan_steps
 from audio.engine import AudioEngine
+from confirmations import open_confirmation
 from mcp_client import ToolFailed
 from services import Services
 from sessions import Session
@@ -28,6 +30,9 @@ async def enroll(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: n
                            {"tool": "enroll_baseline", "args": {"asset_id": asset["id"], "mode": mode}, "result": result})
     svc.bus.changed()
     what = "a good tap" if mode == "tap" else f"{result.get('seconds', 10)} seconds of healthy sound"
+    word = "wheel" if "wheel" in asset["type"] else "part"
+    result["spoken"] = (f"Got a good {word} for {asset['name']}. Tap the rest when you're ready." if mode == "tap"
+                        else f"{asset['name']} is set up. I'll notice when it sounds different.")
     return result, (f"Recorded {what} for {asset['name']}. Tell the worker it is set up and EarShot will now notice "
                     "when it sounds different. Offer to listen again to test it.")
 
@@ -58,18 +63,25 @@ async def analyze(svc: Services, engine: AudioEngine, session: Session, asset: d
     st.add_timeline(f"Listened to {asset['name']} for 10 seconds: {analysis['band']}", "done",
                     {"tool": "analyze_sound", "args": {"asset_id": asset["id"]}, "result": public})
     svc.bus.changed()
-    note = (f"Sound analysis ready for {asset['name']} ({asset['id']}). Call analyze_sound, get_asset_history and "
-            "find_similar_cases")
-    if analysis["band"] != "normal":
-        note += (", assess_risk, and check_inventory for the part the likely cause needs. Then tell the worker what you "
-                 "heard, why, what you recommend and what you will do if they say yes; if the plan stops the machine or "
-                 "takes it out of service, call request_confirmation before asking.")
+    finding = plan_steps.finding_text(asset, public, None)
+    log_result = {"normal": "pass", "slightly unusual": "watch", "very unusual": "fail"}.get(analysis["band"], "fail")
+    logged = await _record_inspection(svc, session.id, asset["id"], log_result, finding)
+    logged_bit = "The inspection is already logged." if logged else "Logging the inspection failed; try log_inspection once."
+    note = (f"Sound analysis ready for {asset['name']} ({asset['id']}): {finding}. {logged_bit} "
+            "Call analyze_sound, get_asset_history and find_similar_cases")
+    if analysis["band"] == "very unusual":
+        question = await _open_fault_plan(svc, session, asset, finding, is_tap=False)
+        note += (". assess_risk, and check_inventory for the part the likely cause needs. "
+                 f"A question is already on screen: '{question}'. Explain what you heard and ask that question. "
+                 "Do not call create_work_order, update_asset_status or notify_people until they say yes, "
+                 "and do not call log_inspection again.")
         if analysis["confidence"] == "not sure":
             note += " You are not sure of the cause: say so and offer to call a person."
+    elif analysis["band"] == "slightly unusual":
+        note += (", assess_risk, and check_inventory. Tell the worker what you heard and schedule a follow-up. "
+                 "Do not stop the machine.")
     else:
-        note += ", then tell the worker it sounds normal and log the inspection."
-    if analysis["band"] == "slightly unusual":
-        note += " Schedule a follow-up to check it again."
+        note += ". Tell the worker it sounds normal. Do not raise a job."
     return analysis, note
 
 
@@ -121,6 +133,7 @@ async def _job(svc: Services, session_id: str, job_id: str, status: str, note: s
 async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.ndarray, part: int) -> tuple[dict[str, Any], str]:
     result = await asyncio.to_thread(engine.tap_test, asset["id"], y)
     if not result["ok"]:
+        result["spoken"] = result.get("tip") or "I didn't hear a tap. Tap again, close to the phone."
         return result, f"The tap test on {asset['name']} did not work ({result['issue']}). Tell the worker: {result['tip']}"
     st = svc.state
     batch = st.tap_batches.setdefault(asset["id"], {"asset_id": asset["id"], "total": asset.get("parts") or 12,
@@ -151,12 +164,11 @@ async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.n
     st.add_timeline(f"Tap test on {asset['name']}: {heard}", "done",
                     {"tool": "tap_test", "args": {"asset_id": asset["id"]}, "result": {"taps": numbers}})
     svc.bus.changed()
+    result["spoken"] = _tap_spoken(word, numbers, left)
     note = (f"Tap test on {asset['name']}: {heard}. So far {good} good, {len(dull)} need a look, {left} left. "
-            "Tell the worker in one or two sentences.")
+            "Tell the worker in one or two sentences. Do not raise a job until they finish the batch.")
     if any(p["result"] == "dull" for p in numbers):
-        note += (" For a dull part, suggest tapping it once more to double-check. If it was already re-tapped and is "
-                 "still dull, recommend taking it out of service / holding it (needs request_confirmation first) and "
-                 "notifying the right people.")
+        note += " For a dull part, suggest tapping it once more to double-check."
     return result, note
 
 
@@ -174,11 +186,29 @@ async def alarm(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np
                     "don't recognise it and offer to call a person.")
 
 
+def _tap_spoken(word: str, numbers: list[dict[str, Any]], left: int) -> str:
+    bits = [f"{word} {p['n']} {'sounds dull' if p['result'] == 'dull' else 'rings well'}" for p in numbers]
+    line = "I heard " + ", ".join(bits) + "."
+    dull = [p for p in numbers if p["result"] == "dull"]
+    if dull:
+        line += f" Tap {word.lower()} {dull[-1]['n']} once more to check."
+    elif left:
+        line += f" {left} to go."
+    else:
+        line += " That's the last one. Say finish and I'll log it."
+    return line
+
+
 def finish_tap(svc: Services, asset: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """Close a tap-test batch: a fixed summary (not left to the LLM) and a note asking for the next step."""
     st = svc.state
     batch = st.tap_batches.get(asset["id"])
     word = "wheel" if "wheel" in asset["type"] else "part"
+    if batch and batch.get("finished"):
+        summary = dict(batch.get("summary") or {"finished": True, "asset_id": asset["id"]})
+        summary["already"] = True
+        return summary, (f"The tap test on {asset['name']} is already finished and the next step is already on screen. "
+                         "Do not finish it again. If a question is waiting, ask it.")
     if not batch or not batch["parts"]:
         return {"finished": False}, f"No {word}s of {asset['name']} have been tapped yet. Tell the worker to start tapping."
     tested = {p["n"]: p["result"] for p in batch["parts"]}
@@ -188,19 +218,53 @@ def finish_tap(svc: Services, asset: dict[str, Any]) -> tuple[dict[str, Any], st
     batch["finished"] = True
     summary = {"finished": True, "asset_id": asset["id"], "good": good, "dull": dull, "not_tapped": untested,
                "total": batch["total"]}
+    batch["summary"] = summary
     dull_text = f"{len(dull)} dull ({word} {', '.join(map(str, dull))})" if dull else "none dull"
     st.add_timeline(f"Finished tap test on {asset['name']}: {len(good)} good, {dull_text}, {len(untested)} not tapped",
                     "done", {"tool": "finish_tap_batch", "args": {"asset_id": asset["id"]}, "result": summary})
     svc.bus.changed()
     note = (f"The worker finished the tap test on {asset['name']} ({asset['id']}): good {word}s {good or 'none'}, dull "
-            f"{word}s {dull or 'none'}, not tapped {untested or 'none'}. Tell them the result in one or two sentences.")
-    if dull:
-        out = svc.pack.vocabulary.get("out_of_service", "take it out of service")
-        hold = svc.pack.vocabulary.get("quarantine", "hold the batch")
-        note += (f" Because of the dull {word}(s), recommend that we {out if 'wheel' in word else hold}, then call "
-                 "request_confirmation with steps such as update_asset_status or quarantine_batch, notify_people (the "
-                 "right people for this site) and log_inspection, and ask the worker.")
-    else:
-        note += " Log the inspection as passed."
+            f"{word}s {dull or 'none'}, not tapped {untested or 'none'}.")
     return summary, note
+
+
+async def close_tap_batch(svc: Services, session: Session, asset: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
+    """Finish the batch, log the inspection, and (when something is dull) open the job for a yes."""
+    summary, note = finish_tap(svc, asset)
+    if not summary.get("finished") or summary.get("already"):
+        return summary, note, ""
+    finding = plan_steps.finding_text(asset, None, svc.state.tap_batches.get(asset["id"]))
+    dull = summary.get("dull") or []
+    logged = await _record_inspection(svc, session.id, asset["id"], "fail" if dull else "pass",
+                                      finding if dull else f"Tap test passed ({summary.get('good') or 'none'} good)")
+    if not dull:
+        spoken = f"All tapped {'wheels' if 'wheel' in asset['type'] else 'parts'} ring well. I logged the inspection as passed."
+        if not logged:
+            spoken = f"All tapped {'wheels' if 'wheel' in asset['type'] else 'parts'} ring well. I couldn't save the inspection log."
+        return summary, spoken + " Tell the worker. Do not raise a job.", spoken
+    question = await _open_fault_plan(svc, session, asset, finding, is_tap=True)
+    saved = "I logged the failed inspection." if logged else "I couldn't save the inspection log."
+    spoken = f"{saved} {question}"
+    note = (f"{note} {saved} A question is already on screen: '{question}'. Ask the worker that. "
+            "Do not call create_work_order, update_asset_status, quarantine_batch or notify_people until they say yes. "
+            "Do not call finish_tap_batch or log_inspection again.")
+    return summary, note, spoken
+
+
+async def _record_inspection(svc: Services, session_id: str, asset_id: str, result: str, notes: str) -> bool:
+    try:
+        out = await svc.enterprise.call("log_inspection", {"asset_id": asset_id, "result": result, "notes": notes})
+    except ToolFailed:
+        svc.state.add_timeline(f"Could not log the inspection of {asset_id}: the system did not respond", "failed")
+        svc.bus.changed()
+        return False
+    await followups.apply(svc, session_id, "log_inspection", {"asset_id": asset_id, "result": result, "notes": notes}, out, 0)
+    return bool(out.get("logged", True))
+
+
+async def _open_fault_plan(svc: Services, session: Session, asset: dict[str, Any], finding: str, *, is_tap: bool) -> str:
+    people = [p.name for p in svc.pack.people]
+    question, steps = plan_steps.fault_steps(asset, svc.pack.vocabulary, people, finding, is_tap=is_tap)
+    await open_confirmation(svc, session, asset["id"], question, steps, [s["tool"] for s in steps])
+    return question
 

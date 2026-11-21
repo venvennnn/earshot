@@ -20,6 +20,7 @@ from openai import APIError, BadRequestError
 
 import confirmations
 import followups
+import plan_steps
 from mcp_client import ToolFailed
 from packs import LANGUAGE_NAMES
 from policy import spoken_decision, tier_for
@@ -100,40 +101,96 @@ class Orchestrator:
         return LOCAL_SCHEMAS + enterprise
 
     # --- one turn --------------------------------------------------------------------------
-    async def run_turn(self, session: Session, user_text: str | None = None, note: str | None = None) -> str:
-        """Run the LLM with tools until it produces a spoken reply. Returns the reply text."""
+    async def run_turn(self, session: Session, user_text: str | None = None, note: str | None = None,
+                       background: bool = False) -> str:
+        """Run the LLM with tools until it produces a spoken reply. Returns the reply text.
+
+        A background turn (a sound result) steps aside as soon as the worker speaks, so the
+        conversation is not stuck behind the tool loop.
+        """
         svc = self.svc
-        async with session.lock:
-            if user_text:
-                session.add({"role": "user", "content": user_text})
-                svc.state.add_line(session.id, "worker", user_text)
+        if not background:
+            session.preempt.set()
+        try:
+            async with session.lock:
+                if background and session.preempt.is_set():
+                    if note:
+                        session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
+                    return ""
+                if not background:
+                    session.preempt.clear()
+                if user_text:
+                    session.add({"role": "user", "content": user_text})
+                    svc.state.add_line(session.id, "worker", user_text)
+                    svc.bus.changed()
+                    pending = confirmations.pending_for(svc, session.id)
+                    decision = spoken_decision(user_text) if pending and pending["status"] == "pending" else None
+                    if pending and decision:
+                        note = await confirmations.decide(svc, session, pending, decision, svc.pack.worker.name)
+                done = await self._carry_out(session)
+                if done:
+                    note = ((note + " ") if note else "") + (
+                        "Already done, do not call these tools again: " + "; ".join(done)
+                        + ". Tell the worker what you did in one or two sentences."
+                    )
+                if note:
+                    session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
+
+                started = time.perf_counter()
+                reply = await self._loop(session, background)
+                if background and session.preempt.is_set():
+                    return ""
+                svc.metrics.add_llm(time.perf_counter() - started)
+                confirmations.finalize(svc, session.id)  # promised steps that did not happen show as "not done"
+                reply = _clean_for_speech(reply) or FALLBACK
+                session.add({"role": "assistant", "content": reply})
+                svc.state.add_line(session.id, "agent", reply)
                 svc.bus.changed()
-                pending = confirmations.pending_for(svc, session.id)
-                decision = spoken_decision(user_text) if pending and pending["status"] == "pending" else None
-                if pending and decision:
-                    note = await confirmations.decide(svc, session, pending, decision, svc.pack.worker.name)
-            if note:
-                session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
+                return reply
+        finally:
+            if not background:
+                session.preempt.clear()
 
-            started = time.perf_counter()
-            reply = await self._loop(session)
-            svc.metrics.add_llm(time.perf_counter() - started)
-            confirmations.finalize(svc, session.id)  # promised steps that did not happen show as "not done"
-            reply = _clean_for_speech(reply) or FALLBACK
-            session.add({"role": "assistant", "content": reply})
-            svc.state.add_line(session.id, "agent", reply)
-            svc.bus.changed()
-            return reply
+    async def _carry_out(self, session: Session) -> list[str]:
+        """Run every approved step that is still waiting, so a yes raises the job even if the model skips it."""
+        svc = self.svc
+        lines: list[str] = []
+        for conf in svc.state.confirmations:
+            if conf["session"] != session.id or conf["status"] != "approved" or conf.get("finalized"):
+                continue
+            asset = svc.state.assets.get(conf["asset_id"], {})
+            analysis = svc.state.analyses.get(conf["asset_id"])
+            batch = svc.state.tap_batches.get(conf["asset_id"])
+            finding = plan_steps.finding_text(asset, analysis, batch)
+            people = [p.name for p in svc.pack.people]
+            for step in conf["steps"]:
+                tool = step.get("tool")
+                if step.get("status") != "next" or not tool:
+                    continue
+                args = plan_steps.args_for(asset, analysis, batch, svc.pack.vocabulary, people,
+                                           svc.pack.fault_parts, tool, finding)
+                if args is None:
+                    continue
+                result = await self.execute(session, tool, args)
+                if result.get("error") or result.get("status") == "needs_confirmation":
+                    lines.append(f"{step['text']} did not work")
+                    continue
+                try:
+                    lines.append(followups.sentence(svc, tool, args, result) or step["text"])
+                except Exception:
+                    lines.append(step["text"])
+        return lines
 
-    async def _loop(self, session: Session) -> str:
+    async def _loop(self, session: Session, background: bool = False) -> str:
         tools = await self.tool_schemas()
         for _ in range(MAX_TOOL_ROUNDS):
+            if background and session.preempt.is_set():
+                return ""
             messages = [{"role": "system", "content": system_prompt(self.svc, session)}, *session.messages]
             try:
-                res = await self.svc.llm.chat.completions.create(
-                    model=self.svc.settings.llm_model, messages=messages, tools=tools,
-                    temperature=0.3, max_tokens=700, **self._extra(),
-                )
+                res = await self._chat(session, background, messages, tools)
+                if res is None:
+                    return ""
             except BadRequestError as exc:
                 # The provider rejected the request (often a tool schema). Log it loudly, then answer without
                 # tools so the worker still hears the result the system note already describes.
@@ -174,10 +231,35 @@ class Orchestrator:
         effort = self.svc.settings.llm_reasoning_effort
         return {"reasoning_effort": effort} if effort else {}
 
+    async def _chat(self, session: Session, background: bool, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
+        """One completion. A background turn is cancelled as soon as the worker speaks."""
+        task = asyncio.create_task(self.svc.llm.chat.completions.create(
+            model=self.svc.settings.llm_model, messages=messages, tools=tools,
+            temperature=0.3, max_tokens=700, **self._extra(),
+        ))
+        if not background:
+            return await task
+        waiter = asyncio.create_task(session.preempt.wait())
+        try:
+            done, _pending = await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not waiter.done():
+                waiter.cancel()
+        if task not in done:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            return None
+        return await task
+
     # --- tools -----------------------------------------------------------------------------
     async def execute(self, session: Session, name: str, args: dict[str, Any]) -> dict[str, Any]:
         """Run one tool under the risk policy. Never raises: failures come back as plain results."""
         svc = self.svc
+        if followups.already_finished(svc, session.id, name):
+            return {"already_done": True, "instruction": "Already done. Tell the worker and do not call it again."}
         tier = tier_for(svc.pack, name, args)
         if tier >= 2 and not session.is_granted(name):
             pending = confirmations.pending_for(svc, session.id)
@@ -216,13 +298,13 @@ class Orchestrator:
         return result
 
     # --- delivery --------------------------------------------------------------------------
-    async def say(self, session: Session, text: str) -> str | None:
+    async def say(self, session: Session, text: str, priority: str = "INTERRUPT") -> str | None:
         """Speak outside a user turn: through the Agora agent if a call is live, else as Murf audio in the app.
         Returns the audio URL when Murf was used."""
         svc = self.svc
         if session.kind == "voice":
             try:
-                await svc.agents.speak(session.id, text)
+                await svc.agents.speak(session.id, text, priority=priority)
                 return None
             except Exception as exc:  # agent gone (idle timeout): fall back to Murf in the browser
                 log.warning("Agent speak failed for %s (%s); using Murf audio", session.id, exc)
@@ -243,8 +325,25 @@ class Orchestrator:
         """Run a turn from a system note and speak it, without blocking the caller."""
         async def run() -> None:
             try:
-                await self.turn_and_say(session, note=note)
+                reply = await self.run_turn(session, note=note, background=True)
+                if reply:
+                    await self.say(session, reply)
             except Exception:
                 log.exception("Background turn failed for %s", session.id)
+
+        asyncio.create_task(run())
+
+    def remember_and_speak(self, session: Session, note: str, spoken: str) -> None:
+        """Keep a sound result in the conversation and say it, without a tool loop that would block speech."""
+        async def run() -> None:
+            try:
+                async with session.lock:
+                    session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
+                    session.add({"role": "assistant", "content": spoken})
+                    self.svc.state.add_line(session.id, "agent", spoken)
+                    self.svc.bus.changed()
+                await self.say(session, spoken, priority="APPEND")
+            except Exception:
+                log.exception("Could not speak a result to %s", session.id)
 
         asyncio.create_task(run())
