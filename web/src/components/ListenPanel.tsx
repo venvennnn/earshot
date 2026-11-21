@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type ClipResponse } from '../lib/api';
-import { CLIP_SECONDS, Recorder } from '../lib/capture';
+import { CLIP_SECONDS, Recorder, fileToWav } from '../lib/capture';
 import type { Asset, Mode, Purpose } from '../lib/types';
 
 const MODES: { id: Mode; label: string }[] = [
@@ -37,6 +37,8 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
   const [quiet, setQuiet] = useState(false);
   const meterRef = useRef<HTMLDivElement>(null);
   const recorderRef = useRef<Recorder | null>(null);
+  const [file, setFile] = useState<File | null>(null); // "Use a recording instead": skips the microphone
+  const fileInput = useRef<HTMLInputElement>(null);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
 
@@ -61,6 +63,19 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     const qualityTimer = window.setInterval(() => setQuiet(mode === 'continuous' && recentLoud < 0.04), 800);
 
     const timer = window.setTimeout(async () => {
+      if (file) {
+        try {
+          setPhase('working');
+          const wav = await fileToWav(file);
+          if (abort.signal.aborted) return;
+          doneRef.current(await api.uploadClip(wav, { asset_id: asset.id, mode, purpose, session, part }));
+        } catch (e) {
+          if (abort.signal.aborted) return;
+          setError(e instanceof Error ? e.message : 'Could not use that file.');
+          setPhase('error');
+        }
+        return;
+      }
       try {
         await onMute?.(true);
         await recorder.open();
@@ -96,9 +111,9 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       recorder.close();
       void onMute?.(false);
     };
-    // Restart when the mode changes; other props are fixed for one recording.
+    // Restart when the mode or the chosen file changes; other props are fixed for one recording.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, file]);
 
   const ring = 2 * Math.PI * 88;
   const progress = phase === 'recording' ? left / CLIP_SECONDS : phase === 'working' ? 0 : 1;
@@ -111,7 +126,9 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       </span>
       <h1 className="listen-asset">{asset.name}</h1>
       <p className="listen-sub">
-        {phase === 'working' ? 'Working out what it heard…' : 'Hold still and stay quiet until the beep'}
+        {phase === 'working'
+          ? file ? `Listening to ${file.name}…` : 'Working out what it heard…'
+          : 'Hold still and stay quiet until the beep'}
       </p>
 
       <div className="listen-ring">
@@ -153,6 +170,16 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
               </button>
             ))}
           </div>
+        </>
+      )}
+
+      {phase !== 'working' && (
+        <>
+          <button className="link-file" onClick={() => fileInput.current?.click()}>
+            Use a recording instead
+          </button>
+          <input ref={fileInput} type="file" accept="audio/*" hidden
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) { setError(''); setFile(f); } }} />
         </>
       )}
 

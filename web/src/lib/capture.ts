@@ -120,3 +120,22 @@ export class Recorder {
     this.stream = null;
   }
 }
+
+/** Any audio file the browser can play (WAV, MP3, M4A, …) -> mono WAV, first `maxSeconds` seconds. */
+export async function fileToWav(file: File, maxSeconds = CLIP_SECONDS): Promise<Blob> {
+  const ctx = new AudioContext();
+  try {
+    const audio = await ctx.decodeAudioData(await file.arrayBuffer());
+    const length = Math.min(audio.length, Math.round(maxSeconds * audio.sampleRate));
+    const mono = new Float32Array(length);
+    for (let ch = 0; ch < audio.numberOfChannels; ch++) {
+      const data = audio.getChannelData(ch);
+      for (let i = 0; i < length; i++) mono[i] += data[i] / audio.numberOfChannels;
+    }
+    return encodeWav(mono, audio.sampleRate);
+  } catch {
+    throw new Error("Couldn't read that file. Try a WAV or MP3 recording.");
+  } finally {
+    void ctx.close();
+  }
+}

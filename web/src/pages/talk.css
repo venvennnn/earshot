@@ -377,3 +377,12 @@
     animation: none;
   }
 }
+
+.link-file {
+  border: 0;
+  background: none;
+  color: var(--sound);
+  text-decoration: underline;
+  font-size: 15px;
+  min-height: var(--touch);
+}
