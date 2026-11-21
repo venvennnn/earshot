@@ -303,20 +303,35 @@
     transform: rotate(360deg);
   }
 }
-.listen-meter {
-  width: 100%;
-  max-width: 360px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+.listen-waveform {
+  width: min(100%, 360px);
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #3a3128;
+  border-radius: var(--r-sm);
+  background: #241d15;
 }
-.listen-meter span {
-  flex: 1;
-  height: 8%;
-  border-radius: 2px;
-  background: var(--sound);
-  transition: height 60ms linear;
+.listen-waveform figcaption {
+  font-size: 13px;
+  color: #e8e1d6;
+}
+.listen-waveform svg {
+  width: 100%;
+  height: 64px;
+  display: block;
+}
+.listen-waveform line,
+.listen-waveform path {
+  vector-effect: non-scaling-stroke;
+}
+.listen-waveform line {
+  stroke: #5c4936;
+}
+.listen-waveform path {
+  fill: none;
+  stroke: #ffbe68;
+  stroke-width: 1.8px;
+  stroke-linecap: round;
 }
 .listen-check {
   font-size: 15px;

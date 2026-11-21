@@ -26,7 +26,7 @@ from packs import LANGUAGE_NAMES
 from policy import spoken_decision, tier_for
 from services import Services
 from sessions import Session, SessionStore
-from speech_text import language_update, message_text, offline_reply
+from speech_text import language_update, match_assets, message_text, offline_reply
 from tools_local import SCHEMAS as LOCAL_SCHEMAS
 from tools_local import TOOLS as LOCAL_TOOLS
 
@@ -34,6 +34,11 @@ log = logging.getLogger("earshot.orchestrator")
 
 MAX_TOOL_ROUNDS = 8
 NOTE_PREFIX = "[EarShot system note, not the worker speaking]"
+MACHINE_CHECK = re.compile(
+    r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?"
+    r"(?:check(?:ing)?|listen to)\s+(?:the\s+)?(?:sound of\s+)?",
+    re.IGNORECASE,
+)
 FALLBACK = "Sorry, I couldn't think that through just now. Please say it again."
 
 
@@ -64,7 +69,7 @@ If their words are Hindi, answer in Hindi. If they are Tamil, answer in Tamil. W
 
 How you work:
 - Use identify_asset to resolve spoken machine names to ids. Machines here: {assets}.
-- To check a machine by ear: call start_listening, then tell the worker to hold the phone near it and stay quiet until the beep. \
+- To check a machine by ear: call start_listening, then tell the worker to hold the phone near it and tap Start recording. \
 The result arrives later as a system note; then call analyze_sound, get_asset_history and find_similar_cases (and assess_risk if unusual), and check spares for the likely part.
 - If no healthy sound is recorded for a machine, offer to record it now (start_listening with purpose 'enroll').
 - To add a new machine: register_asset, then start_listening with purpose 'enroll'.
@@ -124,6 +129,7 @@ class Orchestrator:
                     return ""
                 if not background:
                     session.preempt.clear()
+                pending = None
                 if user_text:
                     heard = language_update(user_text)
                     if heard:
@@ -145,7 +151,9 @@ class Orchestrator:
                     session.add({"role": "user", "content": f"{NOTE_PREFIX} {note}"})
 
                 started = time.perf_counter()
-                reply = await self._loop(session, background)
+                reply = await self._machine_check(session, user_text) if user_text and not note and not pending else ""
+                if not reply:
+                    reply = await self._loop(session, background)
                 if background and session.preempt.is_set():
                     return ""
                 svc.metrics.add_llm(time.perf_counter() - started)
@@ -168,6 +176,29 @@ class Orchestrator:
         finally:
             if not background:
                 session.preempt.clear()
+
+    async def _machine_check(self, session: Session, text: str) -> str:
+        """Handle direct requests to listen even if the model or its tool schema is unavailable."""
+        command = MACHINE_CHECK.match(text.strip())
+        if not command:
+            return ""
+        target = text.strip()[command.end():].rstrip(" .!?")
+        assets = self.svc.state.assets
+        if target.lower() in {"it", "that", "this machine"}:
+            asset = assets.get(session.focus_asset or "")
+        else:
+            matches = match_assets(list(assets.values()), target)
+            asset = matches[0] if len(matches) == 1 else None
+        if asset is None:
+            return ""
+        mode = (asset.get("modes") or ["continuous"])[0]
+        result = await self.execute(session, "start_listening", {"asset_id": asset["id"], "mode": mode})
+        if result.get("ok"):
+            return f"That's {asset['name']}. Hold the phone near it and tap Start recording."
+        if result.get("not_enrolled"):
+            return (f"{asset['name']} needs a healthy recording first. "
+                    "When it's running normally, tap Listen to machine to set it up.")
+        return str(result.get("message") or result.get("error") or "Tap Listen to machine to try again.")
 
     async def _carry_out(self, session: Session) -> list[str]:
         """Run every approved step that is still waiting, so a yes raises the job even if the model skips it."""

@@ -42,7 +42,7 @@ class SpeechTextTest(unittest.TestCase):
     def test_a_tap_asset_asks_for_taps(self) -> None:
         reply = offline_reply(FACTORY, "casting batch", worker="Ravi")
         self.assertIn("Casting batch 2231", reply)
-        self.assertIn("finish", reply)
+        self.assertIn("Listen to machine", reply)
 
     def test_what_does_not_apologise(self) -> None:
         reply = offline_reply(FACTORY, "What?", worker="Ravi")

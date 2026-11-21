@@ -47,14 +47,14 @@ _WHICH = {
     "ta": "எது, {names}?",
 }
 _LISTEN = {
-    "en": "That's {name}. Hold the phone near it and I'll listen.",
-    "hi": "यह {name} है। फोन को पास रखो, मैं सुनता हूँ।",
-    "ta": "இது {name}. போனை அருகில் வையுங்கள், நான் கேட்கிறேன்.",
+    "en": "That's {name}. Hold the phone near it and use Listen to machine.",
+    "hi": "यह {name} है। फोन को पास रखो और Listen to machine दबाओ।",
+    "ta": "இது {name}. போனை அருகில் வைத்து Listen to machine என்பதைத் தட்டுங்கள்.",
 }
 _TAP = {
-    "en": "That's {name}. Tap each part near the phone, then say finish.",
-    "hi": "यह {name} है। हर हिस्से को फोन के पास टैप करो, फिर finish कहो।",
-    "ta": "இது {name}. ஒவ்வொரு பாகத்தையும் போன் அருகில் தட்டுங்கள், பிறகு finish சொல்லுங்கள்.",
+    "en": "That's {name}. Open Listen to machine before tapping each part.",
+    "hi": "यह {name} है। हर हिस्से को टैप करने से पहले Listen to machine दबाओ।",
+    "ta": "இது {name}. ஒவ்வொரு பாகத்தையும் தட்டுவதற்கு முன் Listen to machine என்பதைத் தட்டுங்கள்.",
 }
 
 

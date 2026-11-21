@@ -94,9 +94,9 @@ export default function Talk() {
 
   const onEvent = useCallback(
     (e: LiveEvent) => {
-      if (!session || !live) return;
+      if (!session) return;
       if (e.kind === 'capture_start' && e.session === session.session) {
-        const asset = live.assets.find((a) => a.id === e.asset_id);
+        const asset = live?.assets.find((a) => a.id === e.asset_id);
         if (asset) setCapture({ asset, mode: e.mode, purpose: e.purpose });
       }
       if (e.kind === 'play_audio' && e.target === 'session' && e.session === session.session) void playAudio(e.url);
@@ -117,7 +117,7 @@ export default function Talk() {
   const focusAsset = live?.assets.find((a) => a.id === focusId);
 
   const openListen = () => {
-    if (focusAsset) setCapture({ asset: focusAsset, mode: focusAsset.modes[0] ?? 'continuous', purpose: 'check' });
+    if (focusAsset) setCapture({ asset: focusAsset, mode: focusAsset.modes[0] ?? 'continuous', purpose: focusAsset.state === 'unset' ? 'enroll' : 'check' });
     else setPicking(true);
   };
 
@@ -274,10 +274,12 @@ export default function Talk() {
 
       {capture && session && (
         <ListenPanel
+          key={`${capture.asset.id}:${capture.mode}:${capture.purpose}`}
           asset={capture.asset}
           mode={capture.mode}
           purpose={capture.purpose}
           session={session.session}
+          requireStart
           onMute={(m) => callRef.current?.setMuted(m || muted)}
           onDone={onClip}
           onCancel={() => setCapture(null)}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type ClipResponse } from '../lib/api';
-import { CLIP_SECONDS, QUIET_LEVEL, Recorder, fileToWav } from '../lib/capture';
+import { CLIP_SECONDS, QUIET_LEVEL, Recorder, WAVEFORM_BINS, fileToWav } from '../lib/capture';
 import type { Asset, Mode, Purpose } from '../lib/types';
 
 const MODES: { id: Mode; label: string }[] = [
@@ -21,22 +21,23 @@ interface Props {
   purpose?: Purpose;
   session?: string;
   part?: number;
+  requireStart?: boolean;
   playFile?: File | null; // "Enroll from this speaker": play this file aloud while recording
   onMute?: (muted: boolean) => Promise<void> | void;
   onDone: (res: ClipResponse) => void;
   onCancel: () => void;
 }
 
-type Phase = 'starting' | 'recording' | 'working' | 'error';
+type Phase = 'ready' | 'starting' | 'recording' | 'working' | 'error';
 
-export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose = 'check', session, part, playFile, onMute, onDone, onCancel }: Props) {
+export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose = 'check', session, part, requireStart = false, playFile, onMute, onDone, onCancel }: Props) {
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [phase, setPhase] = useState<Phase>('starting');
+  const [phase, setPhase] = useState<Phase>(requireStart ? 'ready' : 'starting');
   const [left, setLeft] = useState(CLIP_SECONDS);
   const [error, setError] = useState('');
   const [quiet, setQuiet] = useState(false);
-  const meterRef = useRef<HTMLDivElement>(null);
-  const recorderRef = useRef<Recorder | null>(null);
+  const waveformRef = useRef<SVGPathElement>(null);
+  const [requestedRecorder, setRequestedRecorder] = useState<Recorder | null>(null);
   const [file, setFile] = useState<File | null>(null); // "Use a recording instead": skips the microphone
   const [fileShown, setFileShown] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -44,22 +45,20 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
   doneRef.current = onDone;
 
   useEffect(() => {
+    if (requireStart && !requestedRecorder && !file) return;
     const abort = new AbortController();
-    const recorder = new Recorder();
-    recorderRef.current = recorder;
+    const recorder = requestedRecorder ?? new Recorder();
     let player: HTMLAudioElement | null = null;
     let mutedMic = false;
     let frame = 0;
-    const levels: number[] = [];
     let recentLoud = 0;
+    const wave = waveformRef.current;
+    wave?.removeAttribute('d');
 
     const draw = () => {
       const level = recorder.level();
-      levels.push(level);
-      if (levels.length > 48) levels.shift();
       recentLoud = recentLoud * 0.97 + level * 0.03;
-      const bars = meterRef.current?.children;
-      if (bars) for (let i = 0; i < bars.length; i++) (bars[i] as HTMLElement).style.height = `${8 + (levels[i] ?? 0) * 92}%`;
+      wave?.setAttribute('d', recorder.waveformPath());
       frame = requestAnimationFrame(draw);
     };
     const qualityTimer = window.setInterval(() => !file && setQuiet(mode === 'continuous' && recentLoud < QUIET_LEVEL), 800);
@@ -68,11 +67,9 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       if (file) {
         try {
           setPhase('working');
-          const { wav, levels: fileLevels } = await fileToWav(file);
+          const { wav, levels: fileLevels, waveform } = await fileToWav(file);
           if (abort.signal.aborted) return;
-          // Show the file's real waveform: this is the sound EarShot is analysing.
-          const bars = meterRef.current?.children;
-          if (bars) for (let i = 0; i < bars.length; i++) (bars[i] as HTMLElement).style.height = `${8 + (fileLevels[i] ?? 0) * 92}%`;
+          wave?.setAttribute('d', waveform);
           setQuiet(Math.max(...fileLevels) < QUIET_LEVEL);
           setFileShown(true);
           doneRef.current(await api.uploadClip(wav, { asset_id: asset.id, mode, purpose, session, part }));
@@ -84,9 +81,12 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         return;
       }
       try {
+        setPhase('starting');
         await onMute?.(true);
+        if (abort.signal.aborted) return;
         mutedMic = true;
-        await recorder.open();
+        await recorder.open(abort.signal);
+        if (abort.signal.aborted) return;
         frame = requestAnimationFrame(draw);
         setPhase('recording');
         if (playFile) {
@@ -96,15 +96,20 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         }
         const wav = await recorder.record(CLIP_SECONDS, setLeft, abort.signal);
         player?.pause();
+        cancelAnimationFrame(frame);
         recorder.close();
         if (!wav || abort.signal.aborted) return;
+        wave?.setAttribute('d', recorder.waveformPath());
         setPhase('working');
         doneRef.current(await api.uploadClip(wav, { asset_id: asset.id, mode, purpose, session, part }));
       } catch (e) {
         if (abort.signal.aborted) return;
         player?.pause();
+        cancelAnimationFrame(frame);
         recorder.close();
-        setError(e instanceof Error ? e.message : 'Could not use the microphone.');
+        setError(e instanceof DOMException && e.name === 'NotAllowedError'
+          ? 'Microphone access was denied. Allow it in your browser settings and try again.'
+          : e instanceof Error ? e.message : 'Could not use the microphone.');
         setPhase('error');
       } finally {
         // Give the voice call its microphone back even if the recording was cancelled.
@@ -122,7 +127,17 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     };
     // Restart when the mode or the chosen file changes; other props are fixed for one recording.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, file]);
+  }, [mode, file, requireStart, requestedRecorder]);
+
+  const start = () => {
+    const recorder = new Recorder();
+    // Start resume while the tap is active. open() awaits readiness after obtaining the mic.
+    void recorder.unlock().catch(() => {});
+    setError('');
+    setFile(null);
+    setRequestedRecorder(recorder);
+    setPhase('starting');
+  };
 
   const ring = 2 * Math.PI * 88;
   const progress = phase === 'recording' ? left / CLIP_SECONDS : phase === 'working' ? 0 : 1;
@@ -137,7 +152,9 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       <p className="listen-sub">
         {phase === 'working'
           ? file ? `Listening to ${file.name}…` : 'Working out what it heard…'
-          : 'Hold still and stay quiet until the beep'}
+          : phase === 'ready' ? 'Place the phone near the machine, then tap Start recording.'
+            : phase === 'starting' ? 'Opening the microphone…'
+              : 'Hold still and stay quiet until the beep'}
       </p>
 
       <div className="listen-ring">
@@ -151,11 +168,13 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         </div>
       </div>
 
-      <div className="listen-meter" ref={meterRef} aria-hidden="true">
-        {Array.from({ length: 48 }, (_, i) => (
-          <span key={i} />
-        ))}
-      </div>
+      <figure className="listen-waveform">
+        <figcaption>{file ? 'Recording waveform' : 'Microphone waveform'}</figcaption>
+        <svg viewBox={`0 0 ${WAVEFORM_BINS} 64`} preserveAspectRatio="none" aria-hidden="true">
+          <line x1="0" x2={WAVEFORM_BINS} y1="32" y2="32" />
+          <path ref={waveformRef} />
+        </svg>
+      </figure>
       {fileShown && phase === 'working' && (
         <p className={`listen-check ${quiet ? 'warn' : 'good'}`}>
           {quiet ? 'This recording is very quiet' : `Using ${file?.name}: this is the sound EarShot is analysing`}
@@ -179,12 +198,25 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
           <div className="segmented" role="radiogroup">
             {MODES.map((m) => (
               <button key={m.id} role="radio" aria-checked={mode === m.id} className={mode === m.id ? 'on' : ''}
-                disabled={phase === 'working'} onClick={() => setMode(m.id)}>
+                disabled={phase === 'working'} onClick={() => {
+                  if (mode === m.id) return;
+                  if (requireStart && !file) {
+                    setRequestedRecorder(null);
+                    setPhase('ready');
+                  }
+                  setMode(m.id);
+                }}>
                 {m.label}
               </button>
             ))}
           </div>
         </>
+      )}
+
+      {requireStart && (phase === 'ready' || phase === 'error') && (
+        <button className="btn btn-sound" onClick={start}>
+          {phase === 'error' ? 'Retry microphone' : 'Start recording'}
+        </button>
       )}
 
       {phase !== 'working' && (

@@ -17,7 +17,7 @@ from sessions import Session
 
 LocalTool = Callable[[Services, Session, dict[str, Any]], Awaitable[dict[str, Any]]]
 
-LISTEN_TELL = "Tell the worker: hold the phone near it and stay quiet until the beep."
+LISTEN_TELL = "Tell the worker: hold the phone near it and tap Start recording."
 
 
 def _fn(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
@@ -29,7 +29,7 @@ _ASSET = {"asset_id": {"type": "string", "description": "Asset id, e.g. P-14"}}
 
 SCHEMAS: list[dict[str, Any]] = [
     _fn("start_listening",
-        "Start recording the machine with the phone mic for 10 seconds. Use mode 'continuous' for running "
+        "Open the phone recorder for a 10-second machine clip. The worker taps Start recording. Use mode 'continuous' for running "
         "machines, 'tap' for tapping parts, 'alarm' for beeping boxes. Use purpose 'enroll' to record the "
         "healthy sound of a new machine, and 'verify' after a repair to check it sounds normal again (this closes "
         "the open job if it does). Returns immediately; the result arrives later as a system note.",

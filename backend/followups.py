@@ -27,7 +27,7 @@ def sentence(svc: Services, name: str, args: dict[str, Any], result: dict[str, A
         case "identify_asset":
             return f"Found {result['name']} on {result.get('line', 'the line')}" if result.get("found") else None
         case "start_listening":
-            return f"Started listening to {a}" if result.get("ok") else None
+            return f"Opened the recorder for {a}" if result.get("ok") else None
         case "get_asset_history":
             return f"Checked its history: last serviced {result['last_serviced']}" if "last_serviced" in result else None
         case "find_similar_cases":
