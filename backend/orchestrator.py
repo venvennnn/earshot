@@ -16,7 +16,7 @@ import re
 import time
 from typing import Any
 
-from openai import APIError, BadRequestError
+from openai import APIConnectionError, APIError, APITimeoutError, BadRequestError
 
 import confirmations
 import followups
@@ -26,6 +26,7 @@ from packs import LANGUAGE_NAMES
 from policy import spoken_decision, tier_for
 from services import Services
 from sessions import Session, SessionStore
+from speech_text import language_update, message_text, offline_reply
 from tools_local import SCHEMAS as LOCAL_SCHEMAS
 from tools_local import TOOLS as LOCAL_TOOLS
 
@@ -57,7 +58,9 @@ How you speak:
 - Say "normal", "slightly unusual" or "very unusual", and "not sure", "fairly sure" or "very sure". Never say a score.
 - Always present a likely cause as a suggestion ("it sounds like", "most likely").
 - After a diagnosis always say: what you heard, why you think so, what you recommend, and exactly what you will do if they say yes.
-- Answer in the language the worker uses (English, Hindi or Tamil). Words for this site: {words}.
+- The worker's language for this turn is {LANGUAGE_NAMES.get(session.language, "English")}. Answer only in that language, in one or two short sentences. \
+If their words are Hindi, answer in Hindi. If they are Tamil, answer in Tamil. Words for this site: {words}.
+- If they name a machine that is not on this line, say so and name the machines you can check. Do not apologise, and do not ask them to say it again.
 
 How you work:
 - Use identify_asset to resolve spoken machine names to ids. Machines here: {assets}.
@@ -91,6 +94,8 @@ class Orchestrator:
     def __init__(self, svc: Services, sessions: SessionStore) -> None:
         self.svc = svc
         self.sessions = sessions
+        self._token_key = "max_tokens"
+        self._effort_rejected = False
 
     async def tool_schemas(self) -> list[dict[str, Any]]:
         try:
@@ -120,6 +125,9 @@ class Orchestrator:
                 if not background:
                     session.preempt.clear()
                 if user_text:
+                    heard = language_update(user_text)
+                    if heard:
+                        session.language = heard
                     session.add({"role": "user", "content": user_text})
                     svc.state.add_line(session.id, "worker", user_text)
                     svc.bus.changed()
@@ -142,7 +150,17 @@ class Orchestrator:
                     return ""
                 svc.metrics.add_llm(time.perf_counter() - started)
                 confirmations.finalize(svc, session.id)  # promised steps that did not happen show as "not done"
-                reply = _clean_for_speech(reply) or FALLBACK
+                reply = _clean_for_speech(reply)
+                if reply in {FALLBACK, "Sorry, I lost my train of thought. Could you say that again?"}:
+                    reply = ""
+                if not reply:
+                    if background:
+                        return ""
+                    log.warning("No model reply for %s; answering from the machines on this line", session.id)
+                    reply = offline_reply(
+                        list(svc.state.assets.values()), user_text or "",
+                        language=session.language, worker=svc.pack.worker.name,
+                    )
                 session.add({"role": "assistant", "content": reply})
                 svc.state.add_line(session.id, "agent", reply)
                 svc.bus.changed()
@@ -188,20 +206,28 @@ class Orchestrator:
                 return ""
             messages = [{"role": "system", "content": system_prompt(self.svc, session)}, *session.messages]
             try:
-                res = await self._chat(session, background, messages, tools)
-                if res is None:
-                    return ""
+                res = await self._complete(session, background, messages, tools, tokens=2048)
             except BadRequestError as exc:
-                # The provider rejected the request (often a tool schema). Log it loudly, then answer without
-                # tools so the worker still hears the result the system note already describes.
+                # The provider rejected the request (often a tool schema). Answer from the plain text.
                 log.error("LLM rejected the request for %s (answering without tools): %s", session.id, exc)
-                return await self._plain(messages)
+                return await self._plain(session, background, messages)
+            except (APITimeoutError, APIConnectionError) as exc:
+                log.error("LLM call failed for %s: %s", session.id, exc)
+                return ""
             except APIError as exc:
                 log.error("LLM call failed for %s: %s", session.id, exc)
-                return FALLBACK
+                return await self._plain(session, background, messages)
+            if res is None:
+                return ""
             msg = res.choices[0].message
+            text = message_text(msg.content)
             if not msg.tool_calls:
-                return msg.content or ""
+                if text:
+                    return text
+                # Gemini thinking can spend the whole token budget and leave the spoken text empty.
+                log.warning("Empty model reply for %s (finish=%s); retrying without tools",
+                            session.id, getattr(res.choices[0], "finish_reason", None))
+                return await self._plain(session, background, messages, effort="minimal")
             # Keep provider extras (e.g. Gemini thought signatures) so the next call accepts the history.
             assistant = msg.model_dump(exclude_none=True)
             assistant.setdefault("content", "")
@@ -215,28 +241,70 @@ class Orchestrator:
                 session.add({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
         return "I've done several steps but need a moment. Ask me again what's next."
 
-    async def _plain(self, messages: list[dict[str, Any]]) -> str:
+    async def _plain(self, session: Session, background: bool, messages: list[dict[str, Any]],
+                     effort: str | None = None) -> str:
         # Tool-call history can be what was rejected, so keep only plain user/assistant text.
         plain = [m for m in messages if m["role"] in ("system", "user")
                  or (m["role"] == "assistant" and not m.get("tool_calls"))]
         try:
-            res = await self.svc.llm.chat.completions.create(
-                model=self.svc.settings.llm_model, messages=plain, temperature=0.3, max_tokens=400, **self._extra())
-            return res.choices[0].message.content or FALLBACK
-        except APIError as exc:
+            res = await self._complete(session, background, plain, None, tokens=2048, effort=effort)
+        except (APIError, BadRequestError) as exc:
             log.error("LLM call without tools also failed: %s", exc)
-            return FALLBACK
+            return ""
+        if res is None:
+            return ""
+        return message_text(res.choices[0].message.content)
 
-    def _extra(self) -> dict[str, Any]:
-        effort = self.svc.settings.llm_reasoning_effort
-        return {"reasoning_effort": effort} if effort else {}
+    def _effort(self, override: str | None = None) -> str | None:
+        """Gemini thinks by default and can return an empty reply. Keep that thinking small."""
+        if self._effort_rejected:
+            return None
+        if override:
+            return override
+        if self.svc.settings.llm_reasoning_effort:
+            return self.svc.settings.llm_reasoning_effort
+        if "gemini" in self.svc.settings.llm_model.lower():
+            return "low"
+        return None
 
-    async def _chat(self, session: Session, background: bool, messages: list[dict[str, Any]], tools: list[dict[str, Any]]):
+    async def _complete(self, session: Session, background: bool, messages: list[dict[str, Any]],
+                        tools: list[dict[str, Any]] | None, *, tokens: int, effort: str | None = None):
+        """One completion. Retries once if the provider rejects the token or reasoning field."""
+        use_effort = self._effort(effort)
+        token_key = self._token_key
+        last_error: BadRequestError | None = None
+        for _ in range(3):
+            kwargs: dict[str, Any] = {
+                "model": self.svc.settings.llm_model,
+                "messages": messages,
+                "temperature": 0.3,
+                token_key: tokens,
+            }
+            if tools:
+                kwargs["tools"] = tools
+            if use_effort:
+                kwargs["reasoning_effort"] = use_effort
+            try:
+                return await self._invoke(session, background, kwargs)
+            except BadRequestError as exc:
+                last_error = exc
+                detail = str(exc).lower()
+                if use_effort and ("reasoning_effort" in detail or "thinking" in detail):
+                    self._effort_rejected = True
+                    use_effort = None
+                    continue
+                if token_key == "max_tokens" and "max_tokens" in detail:
+                    token_key = "max_completion_tokens"
+                    self._token_key = token_key
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        return None
+
+    async def _invoke(self, session: Session, background: bool, kwargs: dict[str, Any]):
         """One completion. A background turn is cancelled as soon as the worker speaks."""
-        task = asyncio.create_task(self.svc.llm.chat.completions.create(
-            model=self.svc.settings.llm_model, messages=messages, tools=tools,
-            temperature=0.3, max_tokens=700, **self._extra(),
-        ))
+        task = asyncio.create_task(self.svc.llm.chat.completions.create(**kwargs))
         if not background:
             return await task
         waiter = asyncio.create_task(session.preempt.wait())

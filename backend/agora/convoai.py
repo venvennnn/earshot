@@ -17,6 +17,7 @@ from agora_agent.agentkit import Agent
 from agora_agent.agentkit.agent_session import AsyncAgentSession
 
 from config import Settings
+from speech_text import asr_languages
 
 log = logging.getLogger("earshot.convoai")
 
@@ -61,7 +62,7 @@ class AgentManager:
         return (
             Agent(
                 client=self._client,
-                turn_detection={"language": voice.asr_language},
+                turn_detection={"language": asr_languages(voice.asr_language)},
                 interruption={"enable": True, "mode": "start_of_speech"},
             )
             .with_stt(stt)

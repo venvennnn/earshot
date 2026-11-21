@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from agora.convoai import SESSION_HEADER
 from config import Settings
 from orchestrator import Orchestrator
+from speech_text import message_text
 
 _SENTENCE = re.compile(r"(?<=[.!?।])\s+")
 
@@ -30,11 +31,9 @@ def latest_user_text(messages: list[dict[str, Any]]) -> str | None:
     for msg in reversed(messages):
         if msg.get("role") != "user":
             continue
-        content = msg.get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):  # content parts
-            return " ".join(p.get("text", "") for p in content if isinstance(p, dict)).strip()
+        text = message_text(msg.get("content"))
+        if text:
+            return text
     return None
 
 
