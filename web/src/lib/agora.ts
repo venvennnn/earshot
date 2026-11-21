@@ -71,6 +71,8 @@ export class VoiceCall {
     this.ai.on(AgoraVoiceAIEvents.TRANSCRIPT_UPDATED, (items) => this.handlers.onTranscript(this.toLines(items)));
     this.ai.on(AgoraVoiceAIEvents.AGENT_SPEAKING_CHANGED, (_agent, speaking) => this.handlers.onAgentSpeaking(speaking));
     this.ai.on(AgoraVoiceAIEvents.AGENT_METRICS, (_agent, metric) => this.handlers.onMetric(metric));
+    // Agent pipeline errors (ASR / LLM / TTS) reported by Agora; visible in the browser console for debugging.
+    this.ai.on(AgoraVoiceAIEvents.AGENT_ERROR, (agent, error) => console.warn('[EarShot] agent error', agent, error));
 
     await this.rtc.join(app_id, channel, token, uid);
     this.mic = await AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
