@@ -21,6 +21,7 @@ export default function Talk() {
   const callRef = useRef<VoiceCall | null>(null);
   const channelRef = useRef<string | null>(null);
   const orbRef = useRef<HTMLDivElement>(null);
+  const micRef = useRef<HTMLSpanElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const hangUp = useCallback(async () => {
@@ -72,6 +73,8 @@ export default function Talk() {
     const tick = () => {
       const level = callRef.current?.agentLevel() ?? 0;
       orbRef.current?.style.setProperty('--level', String(Math.min(1, level * 1.6)));
+      const mic = callRef.current?.micLevel() ?? 0;
+      micRef.current?.style.setProperty('--mic', String(Math.min(1, mic * 2)));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
@@ -127,6 +130,11 @@ export default function Talk() {
         <p className={`talk-hint ${status === 'error' ? 'is-error' : ''}`} role="status">
           {hint}
         </p>
+        {status === 'live' && !muted && (
+          <p className="mic-meter">
+            Your mic <span ref={micRef} className="mic-bar" aria-hidden="true" />
+          </p>
+        )}
         {status === 'error' && error && <p className="talk-detail">{error}</p>}
         {needsTap && (
           <button

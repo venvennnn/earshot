@@ -81,6 +81,20 @@
 .talk-hint.is-error {
   color: var(--problem);
 }
+.mic-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.mic-bar {
+  --mic: 0;
+  width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--voice) calc(var(--mic) * 100%), var(--line) 0);
+}
 .talk-detail {
   color: var(--muted);
   font-size: 13px;

@@ -83,6 +83,11 @@ export class VoiceCall {
     return this.agentAudio?.getVolumeLevel() ?? 0;
   }
 
+  /** 0..1 loudness of the worker's own mic, so they can see they are being picked up. */
+  micLevel(): number {
+    return this.mic?.getVolumeLevel() ?? 0;
+  }
+
   resumeAudio(): void {
     this.agentAudio?.play();
   }
