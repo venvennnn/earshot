@@ -53,6 +53,7 @@ class LiveState:
         self.sessions: dict[str, dict[str, Any]] = {}
         self.report: dict[str, Any] | None = None
         self.followups: list[dict[str, Any]] = []  # reminders that carry over to the next shift
+        self.histories: dict[str, dict[str, Any]] = {}  # past issues per asset, from the enterprise record
         self.integrations: dict[str, Any] = {}  # optional systems, e.g. {"jira": True, "jira_project": "EAR"}
         self.checked: set[str] = set()
         self.problems: set[str] = set()
@@ -145,6 +146,7 @@ class LiveState:
             "sessions": self.sessions,
             "report": self.report,
             "followups": self.followups,
+            "histories": self.histories,
             "integrations": self.integrations,
             "tiles": self.tiles(),
             "tts": tts,

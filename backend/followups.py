@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Any
 
+from mcp_client import ToolFailed
 from murf import MurfError
 from packs import LANGUAGE_NAMES
 from services import Services
@@ -140,6 +141,20 @@ def enrich(svc: Services, session_id: str, name: str, args: dict[str, Any]) -> d
     return {**args, "evidence": " ".join(parts), "approved_by": approved.get("approved_by", "") if approved else ""}
 
 
+_HISTORY_TOOLS = {"create_work_order", "update_work_order", "log_inspection", "update_asset_status", "quarantine_batch"}
+
+
+async def refresh_histories(svc: Services) -> None:
+    """Reload past issues so the dashboard shows a job as soon as it is raised."""
+    try:
+        data = await svc.enterprise.call("admin_histories", {})
+    except ToolFailed as exc:
+        log.warning("Could not load past issues: %s", exc)
+        return
+    svc.state.histories = data.get("assets") or {}
+    svc.bus.changed()
+
+
 async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any], result: dict[str, Any], tier: int) -> None:
     """Update the twin and trigger voice follow-ups after a successful tool call."""
     st = svc.state
@@ -187,6 +202,8 @@ async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any],
             asyncio.create_task(announce(svc, args["message"], args.get("at", "now")))
         case "generate_report":
             asyncio.create_task(write_report(svc, notes=args.get("summary", ""), file=False))
+    if name in _HISTORY_TOOLS:
+        await refresh_histories(svc)
     svc.bus.changed()
 
 

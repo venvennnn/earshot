@@ -152,6 +152,35 @@ export interface TtsMetrics {
   llm_calls: number;
 }
 
+export interface PastIssue {
+  id: string;
+  asset_id: string;
+  part?: number;
+  title: string;
+  priority?: string;
+  status?: string;
+  when?: string;
+  cause?: string;
+  summary?: string;
+}
+
+export interface InspectionLog {
+  id: string;
+  asset_id: string;
+  part?: number;
+  result: string;
+  notes: string;
+  at: string;
+}
+
+export interface AssetHistory {
+  last_serviced: string;
+  notes: string;
+  status: string;
+  issues: PastIssue[];
+  inspections: InspectionLog[];
+}
+
 export interface LiveState {
   pack: PackSummary | null;
   assets: Asset[];
@@ -166,6 +195,7 @@ export interface LiveState {
   sessions: Record<string, { kind: string; worker: string; focus?: string }>;
   report: { text: string; audio_url: string | null; ts: number } | null;
   followups: FollowUp[];
+  histories: Record<string, AssetHistory>;
   integrations: { jira?: boolean; jira_project?: string | null };
   tiles: {
     machines_checked: number;
