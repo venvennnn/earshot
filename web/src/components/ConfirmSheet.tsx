@@ -10,19 +10,20 @@ interface Props {
 }
 
 export function ConfirmSheet({ confirmation, voice, onAnswered }: Props) {
-  const [busy, setBusy] = useState(false);
+  const [decisionInFlight, setDecisionInFlight] = useState<'yes' | 'no' | null>(null);
   const [error, setError] = useState('');
   const waitingSecond = confirmation.status === 'second_approval';
 
   const answer = async (decision: 'yes' | 'no') => {
-    setBusy(true);
+    setDecisionInFlight(decision);
     setError('');
     try {
-      onAnswered?.(await api.answer(confirmation.id, decision));
+      const response = await api.answer(confirmation.id, decision);
+      onAnswered?.(response);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not go through.');
     } finally {
-      setBusy(false);
+      setDecisionInFlight(null);
     }
   };
 
@@ -50,14 +51,14 @@ export function ConfirmSheet({ confirmation, voice, onAnswered }: Props) {
       ) : (
         <>
           <div className="sheet-actions">
-            <button className="btn btn-dark btn-lg" disabled={busy} onClick={() => answer('yes')}>
-              Yes, go ahead
+            <button className="btn btn-dark btn-lg" disabled={decisionInFlight !== null} onClick={() => answer('yes')}>
+              {decisionInFlight === 'yes' ? 'Approving…' : 'Yes, go ahead'}
             </button>
-            <button className="btn btn-lg" disabled={busy} onClick={() => answer('no')}>
-              Not now
+            <button className="btn btn-lg" disabled={decisionInFlight !== null} onClick={() => answer('no')}>
+              {decisionInFlight === 'no' ? 'Saving…' : 'Not now'}
             </button>
           </div>
-          {error && <p className="error-text">{error}</p>}
+          {error && <p className="error-text" role="alert">{error}</p>}
           {voice && <p className="muted center small">You can also just say "yes"</p>}
         </>
       )}
