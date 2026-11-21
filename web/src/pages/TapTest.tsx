@@ -40,13 +40,15 @@ function HearGoodVsThis({ batch, part, word }: { batch: TapBatch; part: TapPart;
 }
 
 export default function TapTest() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const { live } = useLive();
   const appSession = useAppSession();
   const voice = useVoiceCall(); // optional live call: say "yes" or "finish the batch" while tapping
   const session = voice.session ?? appSession;
-  const asset = live?.assets.find((a) => a.id === params.get('asset')) ?? live?.assets.find((a) => a.modes.includes('tap'));
+  const tapAssets = live?.assets.filter((a) => a.modes.includes('tap'));
+  const asset = tapAssets?.find((a) => a.id === params.get('asset')) ?? tapAssets?.[0];
   const [recording, setRecording] = useState<{ purpose: 'check' | 'enroll'; part?: number } | null>(null);
+  const [savedReference, setSavedReference] = useState<string | null>(null);
   const [said, setSaid] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState('');
@@ -55,8 +57,13 @@ export default function TapTest() {
   // During a call EarShot speaks through Agora; show its latest words here too.
   const lines = voice.session ? (live?.transcript ?? []).filter((l) => l.session === voice.session) : [];
   useLiveEvent(useCallback((e) => {
+    if (e.kind === 'capture_start' && e.session === voice.session && e.mode === 'tap'
+      && (e.purpose === 'enroll' || e.purpose === 'check') && live?.assets.some((a) => a.id === e.asset_id)) {
+      setParams({ asset: e.asset_id });
+      setRecording({ purpose: e.purpose });
+    }
     if (e.kind === 'play_audio' && e.target === 'session' && e.session && e.session === voice.session) void playAudio(e.url);
-  }, [voice.session]));
+  }, [live, setParams, voice.session]));
 
   const heard = (r: TurnReply) => {
     if (r.reply) setSaid(r.reply);
@@ -75,6 +82,13 @@ export default function TapTest() {
     }
   };
   const done = (res: ClipResponse) => {
+    setError('');
+    if (recording?.purpose === 'enroll' && asset) {
+      if (res.result.enrolled) setSavedReference(asset.id);
+      else setError(res.result.tip ?? 'No reference saved. Tap a good part firmly near the phone and try again.');
+    } else if (res.result.ok === false) {
+      setError(res.result.tip ?? 'No usable taps were detected. Try again.');
+    }
     setRecording(null);
     heard(res);
   };
@@ -97,18 +111,30 @@ export default function TapTest() {
   const good = parts.filter((p) => p.result === 'good').length;
   const dull = parts.filter((p) => p.result === 'dull').length;
   const next = parts.length < total ? Math.max(0, ...parts.map((p) => p.n)) + 1 : null;
-  const needsReference = asset.state === 'unset' && !batch;
+  const needsReference = asset.state === 'unset' && !batch && savedReference !== asset.id;
   const word = asset.type.includes('wheel') ? 'wheel' : 'part';
 
   return (
     <div className="phone">
       <main className="phone-body">
         <TopBar title="Tap test" sub={asset.name} right={<span className="pill pill-sound"><span className="dot" /> Ready</span>} />
+        {tapAssets && tapAssets.length > 1 && (
+          <label className="field">
+            <span>Wheelset or batch</span>
+            <select value={asset.id} onChange={(e) => {
+              setParams({ asset: e.target.value });
+              setError('');
+              setSaid('');
+            }}>
+              {tapAssets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+        )}
         <div className={`voice-strip ${voice.status}`}>
           {voice.status === 'live' ? (
             <>
               <span className="pill pill-ok"><span className="dot" /> Talking to EarShot</span>
-              <span className="muted small">Say "yes" or "finish the batch"</span>
+              <span className="muted small">Say “Tap test {asset.name}” or “finish the batch”</span>
               {voice.needsTap && (
                 <button className="btn btn-voice" onClick={voice.resume}>Tap to hear EarShot</button>
               )}
@@ -129,9 +155,12 @@ export default function TapTest() {
 
         {needsReference ? (
           <section className="card">
-            <h2 className="card-h">First, tap a {word} you know is good</h2>
-            <p className="muted">EarShot compares every tap with that ring.</p>
-            <button className="btn btn-sound btn-lg" onClick={() => setRecording({ purpose: 'enroll' })}>Record a good {word}</button>
+            <h2 className="card-h">Record one good {word}</h2>
+            <p className="muted">Place the phone near a good {word}. After the beep, tap it once and let it ring. EarShot uses that sound as the reference.</p>
+            <button className="btn btn-sound btn-lg" disabled={!session} onClick={() => {
+              setError('');
+              setRecording({ purpose: 'enroll' });
+            }}>Set up reference</button>
           </section>
         ) : (
           shown && batch && (
@@ -149,6 +178,10 @@ export default function TapTest() {
               <HearGoodVsThis batch={batch} part={shown} word={word} />
             </section>
           )
+        )}
+
+        {savedReference === asset.id && !parts.length && (
+          <p className="pill pill-ok" role="status">Reference saved. Ready to test.</p>
         )}
 
         <div className="tap-grid">
@@ -211,7 +244,7 @@ export default function TapTest() {
         </div>
       )}
       {recording && session && (
-        <ListenPanel asset={asset} mode="tap" purpose={recording.purpose} part={recording.part} session={session}
+        <ListenPanel asset={asset} mode="tap" requireStart purpose={recording.purpose} part={recording.part} session={session}
           onMute={voice.setMuted} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>

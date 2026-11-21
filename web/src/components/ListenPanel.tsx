@@ -32,8 +32,11 @@ type Phase = 'ready' | 'starting' | 'recording' | 'working' | 'error';
 
 export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose = 'check', session, part, requireStart = false, playFile, onMute, onDone, onCancel }: Props) {
   const [mode, setMode] = useState<Mode>(initialMode);
+  const tapReference = mode === 'tap' && purpose === 'enroll';
+  const clipSeconds = tapReference ? 4 : CLIP_SECONDS;
+  const partWord = asset.type.includes('wheel') ? 'wheel' : 'part';
   const [phase, setPhase] = useState<Phase>(requireStart ? 'ready' : 'starting');
-  const [left, setLeft] = useState(CLIP_SECONDS);
+  const [left, setLeft] = useState(clipSeconds);
   const [error, setError] = useState('');
   const [quiet, setQuiet] = useState(false);
   const waveformRef = useRef<SVGPathElement>(null);
@@ -88,13 +91,15 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
         await recorder.open(abort.signal);
         if (abort.signal.aborted) return;
         frame = requestAnimationFrame(draw);
-        setPhase('recording');
         if (playFile) {
           player = new Audio(URL.createObjectURL(playFile));
           player.loop = true;
           void player.play();
         }
-        const wav = await recorder.record(CLIP_SECONDS, setLeft, abort.signal);
+        const wav = await recorder.record(clipSeconds, (secondsLeft) => {
+          setPhase('recording');
+          setLeft(secondsLeft);
+        }, abort.signal);
         player?.pause();
         cancelAnimationFrame(frame);
         recorder.close();
@@ -127,7 +132,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     };
     // Restart when the mode or the chosen file changes; other props are fixed for one recording.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, file, requireStart, requestedRecorder]);
+  }, [mode, file, clipSeconds, requireStart, requestedRecorder]);
 
   const start = () => {
     const recorder = new Recorder();
@@ -140,7 +145,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
   };
 
   const ring = 2 * Math.PI * 88;
-  const progress = phase === 'recording' ? left / CLIP_SECONDS : phase === 'working' ? 0 : 1;
+  const progress = phase === 'recording' ? left / clipSeconds : phase === 'working' ? 0 : 1;
 
   return (
     <div className="listen" role="dialog" aria-label="Listening to the machine">
@@ -152,9 +157,12 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       <p className="listen-sub">
         {phase === 'working'
           ? file ? `Listening to ${file.name}…` : 'Working out what it heard…'
-          : phase === 'ready' ? 'Place the phone near the machine, then tap Start recording.'
+          : phase === 'ready' ? tapReference ? `Place the phone near a good ${partWord}.`
+              : 'Place the phone near the machine, then tap Start recording.'
             : phase === 'starting' ? 'Opening the microphone…'
-              : 'Hold still and stay quiet until the beep'}
+              : tapReference ? `Tap the good ${partWord} once after the first beep.`
+                : mode === 'tap' ? `After the beep, tap each ${partWord} once.`
+                  : 'Hold still and stay quiet until the beep'}
       </p>
 
       <div className="listen-ring">
@@ -163,7 +171,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
           <circle cx="100" cy="100" r="88" className="ring-fg" strokeDasharray={ring} strokeDashoffset={ring * (1 - progress)} />
         </svg>
         <div className="listen-count">
-          {phase === 'working' ? <span className="spinner" aria-label="Working" /> : <strong>{phase === 'recording' ? left : CLIP_SECONDS}</strong>}
+          {phase === 'working' ? <span className="spinner" aria-label="Working" /> : <strong>{phase === 'recording' ? left : clipSeconds}</strong>}
           <span>{phase === 'working' ? '' : 'seconds left'}</span>
         </div>
       </div>
@@ -182,14 +190,14 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
       )}
       {phase === 'recording' && (
         <p className={`listen-check ${quiet ? 'warn' : 'good'}`}>
-          {quiet ? 'Too quiet, move closer' : 'Good, the sound is coming through clearly'}
+          {mode === 'tap' ? 'Recording taps' : quiet ? 'Too quiet, move closer' : 'Good, the sound is coming through clearly'}
         </p>
       )}
       {phase === 'error' && <p className="listen-check warn">{error}</p>}
 
       <div className="listen-tip">
         <span className="tip-icon" aria-hidden="true">◉▯</span>
-        <p>{playFile ? 'Playing your file through this speaker while recording.' : TIPS[mode]}</p>
+        <p>{playFile ? 'Playing your file through this speaker while recording.' : tapReference ? 'Let the ring fade before moving the phone.' : TIPS[mode]}</p>
       </div>
 
       {purpose === 'check' && (

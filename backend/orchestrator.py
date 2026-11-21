@@ -36,7 +36,7 @@ MAX_TOOL_ROUNDS = 8
 NOTE_PREFIX = "[EarShot system note, not the worker speaking]"
 MACHINE_CHECK = re.compile(
     r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?"
-    r"(?:check(?:ing)?|listen to)\s+(?:the\s+)?(?:sound of\s+)?",
+    r"(?:(?P<tap>tap(?:[ -]test)?)|check(?:ing)?|listen to)\s+(?:the\s+)?(?:sound of\s+)?",
     re.IGNORECASE,
 )
 FALLBACK = "Sorry, I couldn't think that through just now. Please say it again."
@@ -184,6 +184,8 @@ class Orchestrator:
             return ""
         target = text.strip()[command.end():].rstrip(" .!?")
         assets = self.svc.state.assets
+        if command.group("tap"):
+            assets = {key: asset for key, asset in assets.items() if "tap" in asset.get("modes", [])}
         if target.lower() in {"it", "that", "this machine"}:
             asset = assets.get(session.focus_asset or "")
         else:
@@ -191,9 +193,19 @@ class Orchestrator:
             asset = matches[0] if len(matches) == 1 else None
         if asset is None:
             return ""
-        mode = (asset.get("modes") or ["continuous"])[0]
+        mode = "tap" if command.group("tap") else (asset.get("modes") or ["continuous"])[0]
+        if mode == "tap" and asset["id"] not in self.svc.audio_store.enrolled():
+            result = await self.execute(session, "start_listening", {
+                "asset_id": asset["id"], "mode": "tap", "purpose": "enroll",
+            })
+            if result.get("ok"):
+                part = "wheel" if "wheel" in asset["type"] else "part"
+                return f"First, record a good {part} for {asset['name']}. Tap Start recording, then tap it once after the beep."
+            return str(result.get("message") or result.get("error") or "Open Tap test to try again.")
         result = await self.execute(session, "start_listening", {"asset_id": asset["id"], "mode": mode})
         if result.get("ok"):
+            if mode == "tap":
+                return f"{asset['name']} is ready. Tap Start recording, then tap each part once after the beep."
             return f"That's {asset['name']}. Hold the phone near it and tap Start recording."
         if result.get("not_enrolled"):
             return (f"{asset['name']} needs a healthy recording first. "

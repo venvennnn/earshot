@@ -20,7 +20,7 @@ export default function AddMachine() {
   const [assetId, setAssetId] = useState(params.get('asset') ?? '');
   const [name, setName] = useState('');
   const [type, setType] = useState('');
-  const [mode, setMode] = useState<Mode>('continuous');
+  const [selectedMode, setMode] = useState<Mode | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState<'enroll' | 'check' | null>(null);
   const [enrolled, setEnrolled] = useState(false);
@@ -29,6 +29,7 @@ export default function AddMachine() {
   const [error, setError] = useState('');
 
   const asset: Asset | undefined = live?.assets.find((a) => a.id === assetId);
+  const mode = selectedMode ?? (asset?.modes.includes('tap') && !asset.modes.includes('continuous') ? 'tap' : 'continuous');
   const unset = live?.assets.filter((a) => a.state === 'unset') ?? [];
   const pending = live?.confirmations.find((c) => c.session === session && (c.status === 'pending' || c.status === 'second_approval'));
 
@@ -54,7 +55,10 @@ export default function AddMachine() {
     const wasEnroll = recording === 'enroll';
     setRecording(null);
     heard(res);
-    if (wasEnroll) setEnrolled(Boolean(res.result.enrolled));
+    if (wasEnroll) {
+      setEnrolled(Boolean(res.result.enrolled));
+      if (!res.result.enrolled) setError(res.result.tip ?? 'No reference saved. Try again.');
+    }
     else setResult(res.result);
   };
 
@@ -67,7 +71,10 @@ export default function AddMachine() {
           <section className="card form-card">
             <label className="field">
               <span>Machine</span>
-              <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+              <select value={assetId} onChange={(e) => {
+                setAssetId(e.target.value);
+                setMode(null);
+              }}>
                 <option value="">A new machine…</option>
                 {unset.map((a) => (
                   <option key={a.id} value={a.id}>{a.name} (not set up yet)</option>
@@ -105,7 +112,7 @@ export default function AddMachine() {
             </details>
 
             <button className="btn btn-sound btn-lg" disabled={!session || (!assetId && !name.trim())} onClick={start}>
-              Record 10 seconds of healthy sound
+              {mode === 'tap' ? 'Record one good tap' : 'Record healthy sound'}
             </button>
             {error && <p className="error-text">{error}</p>}
           </section>
@@ -133,7 +140,7 @@ export default function AddMachine() {
         </div>
       )}
       {recording && asset && session && (
-        <ListenPanel asset={asset} mode={mode} purpose={recording} session={session}
+        <ListenPanel asset={asset} mode={mode} requireStart purpose={recording} session={session}
           playFile={recording === 'enroll' ? file : null} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>

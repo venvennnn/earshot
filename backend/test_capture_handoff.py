@@ -38,3 +38,25 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("needs a healthy recording first", reply)
         self.assertEqual(self.session.focus_asset, "P-14")
         self.assertFalse(any(call.args[0] == "capture_start" for call in self.emit.await_args_list))
+
+    async def test_railway_tap_request_opens_reference_for_the_wheelset(self):
+        pack = load_pack("railways")
+        self.orchestrator.svc.pack = pack
+        self.orchestrator.svc.state.load_pack(pack, set())
+        self.enrolled.return_value = set()
+        reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4401.")
+        self.assertIn("record a good wheel for Coach 4401", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="C-4401", mode="tap", purpose="enroll"
+        )
+
+    async def test_railway_tap_request_checks_an_enrolled_wheelset(self):
+        pack = load_pack("railways")
+        self.orchestrator.svc.pack = pack
+        self.orchestrator.svc.state.load_pack(pack, {"C-4402"})
+        self.enrolled.return_value = {"C-4402"}
+        reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4402.")
+        self.assertIn("Coach 4402 is ready", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="C-4402", mode="tap", purpose="check"
+        )

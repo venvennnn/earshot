@@ -27,6 +27,8 @@ export default function Talk() {
   const [muted, setMuted] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [capture, setCapture] = useState<Capture | null>(null);
+  const [tapReference, setTapReference] = useState<Asset | null>(null);
+  const [captureError, setCaptureError] = useState('');
   const [picking, setPicking] = useState(false);
   const [result, setResult] = useState<Analysis | null>(null);
   const [typed, setTyped] = useState('');
@@ -123,7 +125,11 @@ export default function Talk() {
 
   const onClip = (res: ClipResponse) => {
     setCapture(null);
-    if (res.result.band || res.result.ok === false) setResult(res.result);
+    setCaptureError('');
+    if (capture?.mode === 'tap' && capture.purpose === 'enroll') {
+      if (res.result.enrolled) setTapReference(capture.asset);
+      else setCaptureError(res.result.tip ?? 'No reference saved. Try tapping a good part once after the beep.');
+    } else if (res.result.band || res.result.ok === false) setResult(res.result);
   };
 
   const send = async () => {
@@ -254,6 +260,21 @@ export default function Talk() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {captureError && !capture && <p className="error-text" role="alert">{captureError}</p>}
+      {tapReference && !capture && (
+        <div className="overlay">
+          <section className="card overlay-card">
+            <h2 className="card-h">Reference saved</h2>
+            <p className="muted">{tapReference.name} is ready for a tap test.</p>
+            <button className="btn btn-sound" onClick={() => {
+              setCapture({ asset: tapReference, mode: 'tap', purpose: 'check' });
+              setTapReference(null);
+            }}>Start tap test</button>
+            <button className="btn" onClick={() => setTapReference(null)}>Done</button>
+          </section>
         </div>
       )}
 
