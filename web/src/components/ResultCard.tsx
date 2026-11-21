@@ -14,9 +14,11 @@ export function ResultCard({ analysis, facts = {} }: Props) {
   if (!analysis.ok) {
     return (
       <section className="card result-card">
-        <span className="badge badge-sound">Let's try again</span>
-        <h2 className="result-title">I couldn't hear it clearly</h2>
-        <p className="muted">{analysis.tip}</p>
+        <div className="result-hero">
+          <span className="badge">Let's try again</span>
+          <h2 className="result-title">I couldn't hear it clearly</h2>
+          <p>{analysis.tip}</p>
+        </div>
       </section>
     );
   }
@@ -42,41 +44,45 @@ export function ResultCard({ analysis, facts = {} }: Props) {
 
   return (
     <section className="card result-card">
-      <span className={`badge ${problem ? 'badge-problem' : 'badge-ok'}`}>
-        {analysis.band === 'very unusual' ? 'Problem found' : analysis.band === 'slightly unusual' ? 'Keep an eye on it' : 'Sounds normal'}
-      </span>
-      <h2 className="result-title">{title}</h2>
-      {analysis.baseline_url && (
-        <button className="btn" onClick={compare}>
-          {playing ? '■ Stop' : '▶ Hear normal vs now'}
-        </button>
-      )}
-      <p className="muted small">How unusual it sounds</p>
-      <UnusualBar analysis={analysis} />
-      <dl className="facts">
-        <div>
-          <dt>How sure</dt>
-          <dd>{sentenceCase(analysis.confidence ?? '')}</dd>
-        </div>
-        {facts.seen_before && (
-          <div>
-            <dt>Seen before</dt>
-            <dd>{facts.seen_before}</dd>
-          </div>
+      <div className={`result-hero ${analysis.band === 'very unusual' ? 'problem' : analysis.band === 'normal' ? 'normal' : ''}`}>
+        <span className="badge">
+          {analysis.band === 'very unusual' ? 'Problem found' : analysis.band === 'slightly unusual' ? 'Keep an eye on it' : 'Sounds normal'}
+        </span>
+        <h2 className="result-title">{title}</h2>
+      </div>
+      <div className="result-details">
+        {analysis.baseline_url && (
+          <button className="btn" onClick={compare}>
+            {playing ? '■ Stop' : '▶ Hear normal vs now'}
+          </button>
         )}
-        {facts.spare && (
+        <p className="muted small">How unusual it sounds</p>
+        <UnusualBar analysis={analysis} />
+        <dl className="facts">
           <div>
-            <dt>Spare part</dt>
-            <dd>{sentenceCase(facts.spare)}</dd>
+            <dt>How sure</dt>
+            <dd>{sentenceCase(analysis.confidence ?? '')}</dd>
           </div>
-        )}
-        {problem && analysis.alternatives && analysis.alternatives.length > 0 && (
-          <div>
-            <dt>Could also be</dt>
-            <dd>{analysis.alternatives.join(', ')}</dd>
-          </div>
-        )}
-      </dl>
+          {facts.seen_before && (
+            <div>
+              <dt>Seen before</dt>
+              <dd>{facts.seen_before}</dd>
+            </div>
+          )}
+          {facts.spare && (
+            <div>
+              <dt>Spare part</dt>
+              <dd>{sentenceCase(facts.spare)}</dd>
+            </div>
+          )}
+          {problem && analysis.alternatives && analysis.alternatives.length > 0 && (
+            <div>
+              <dt>Could also be</dt>
+              <dd>{analysis.alternatives.join(', ')}</dd>
+            </div>
+          )}
+        </dl>
+      </div>
     </section>
   );
 }

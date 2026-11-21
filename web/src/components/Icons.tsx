@@ -95,3 +95,9 @@ export const WaveIcon = ({ size = 28 }: IconProps) => (
     <path d="M6 10v4M10 7v10M14 9v6M18 11v2" />
   </svg>
 );
+
+export const WarningIcon = ({ size = 22 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M12 4l9 16H3zM12 10v4M12 17v.5" />
+  </svg>
+);

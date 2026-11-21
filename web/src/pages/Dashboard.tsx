@@ -27,8 +27,11 @@ function Header({ live, connected, soundOn, onSound }: { live: LiveState | null;
     <header className="db-card db-header">
       <Logo size={26} />
       <div className="db-where">
-        <strong>{live?.pack ? `${live.pack.line} · ${live.pack.plant}` : 'EarShot'}</strong>
-        <span>{live?.pack?.shift} · {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+        <h1>{live?.pack ? `${live.pack.line} · ${live.pack.plant}` : 'Dashboard'}</h1>
+        <span>
+          {live?.pack && `${live.pack.shift} · `}
+          {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+        </span>
       </div>
       <div className="db-header-right">
         <span className={`pill ${connected ? 'pill-ok' : 'pill-sound'}`}>
@@ -90,10 +93,10 @@ function Tiles({ live }: { live: LiveState }) {
   const names = t.problem_assets.map((id) => midSentence(live.assets.find((a) => a.id === id)?.name ?? id));
   return (
     <section className="db-tiles">
-      <div className="db-card db-tile"><span>Machines checked</span><strong>{t.machines_checked}</strong><em>this shift</em></div>
-      <div className="db-card db-tile"><span>Problems caught early</span><strong>{t.problems_caught}</strong><em>{names.join(' and ') || 'none so far'}</em></div>
-      <div className="db-card db-tile"><span>Breakdown time saved</span><strong>{t.hours_saved_estimate} h</strong><em>estimated</em></div>
-      <div className="db-card db-tile"><span>Jobs done for the team</span><strong>{t.jobs_done}</strong><em>{t.waiting_for_yes} waiting for a yes</em></div>
+      <div className="db-card db-tile db-tile-voice"><span>Machines checked</span><strong>{t.machines_checked}</strong><em>this shift</em></div>
+      <div className="db-card db-tile db-tile-sound"><span>Problems caught early</span><strong>{t.problems_caught}</strong><em>{names.join(' and ') || 'none so far'}</em></div>
+      <div className="db-card db-tile db-tile-ok"><span>Breakdown time saved</span><strong>{t.hours_saved_estimate} h</strong><em>estimated</em></div>
+      <div className="db-card db-tile db-tile-violet"><span>Jobs done for the team</span><strong>{t.jobs_done}</strong><em>{t.waiting_for_yes} waiting for a yes</em></div>
     </section>
   );
 }

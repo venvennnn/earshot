@@ -29,6 +29,11 @@ a {
   color: inherit;
 }
 
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--voice);
+  outline-offset: 3px;
+}
+
 button {
   font: inherit;
   color: inherit;
