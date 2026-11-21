@@ -62,8 +62,42 @@ function waveformPath(bins: WaveformBin[]): string {
   ).join(' ');
 }
 
+let captureContext: AudioContext | null = null;
+
+function recordingContext(): AudioContext {
+  if (!captureContext || captureContext.state === 'closed') captureContext = new AudioContext();
+  return captureContext;
+}
+
+/** Unlock audio during a phone app gesture so later spoken commands can capture automatically. */
+export function primeRecordingAudio(): void {
+  try {
+    const ctx = recordingContext();
+    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
+  } catch {
+    // Unsupported browsers report the error when recording is requested.
+  }
+}
+
+async function resumeRecordingAudio(ctx: AudioContext): Promise<void> {
+  if (ctx.state === 'running') return;
+  let timer: number | undefined;
+  try {
+    await Promise.race([
+      ctx.resume(),
+      new Promise<never>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error('The browser paused recording audio. Tap Retry microphone to enable it.')), 2000);
+      }),
+    ]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export class Recorder {
   private ctx: AudioContext | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+  private output: GainNode | null = null;
   private stream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
   private processor: ScriptProcessorNode | null = null;
@@ -78,12 +112,6 @@ export class Recorder {
   }
   private levelBuf = new Float32Array(2048);
 
-  // Call from the Start recording tap so mobile browsers can unlock Web Audio.
-  async unlock(): Promise<void> {
-    this.ctx ??= new AudioContext();
-    await this.ctx.resume();
-  }
-
   async open(signal?: AbortSignal): Promise<void> {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       throw new Error('Open EarShot over HTTPS to use the phone microphone.');
@@ -96,15 +124,18 @@ export class Recorder {
       return;
     }
     this.stream = stream;
-    await this.unlock();
+    this.ctx = recordingContext();
+    await resumeRecordingAudio(this.ctx);
     if (!this.ctx || signal?.aborted) return;
     const source = this.ctx.createMediaStreamSource(this.stream);
+    this.source = source;
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     source.connect(this.analyser);
     // ScriptProcessor works on every mobile browser; muted output keeps it running without feedback.
     this.processor = this.ctx.createScriptProcessor(4096, 1, 1);
     const mute = this.ctx.createGain();
+    this.output = mute;
     mute.gain.value = 0;
     source.connect(this.processor);
     this.processor.connect(mute);
@@ -134,6 +165,10 @@ export class Recorder {
     osc.frequency.value = frequency;
     gain.gain.value = 0.25;
     osc.connect(gain).connect(this.ctx.destination);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
     osc.start();
     osc.stop(this.ctx.currentTime + ms / 1000);
     await new Promise((r) => window.setTimeout(r, ms + 250)); // let the beep die away before/after capture
@@ -175,11 +210,14 @@ export class Recorder {
 
   close(): void {
     this.capturing = false;
+    this.source?.disconnect();
+    this.source = null;
+    this.output?.disconnect();
+    this.output = null;
     this.processor?.disconnect();
     this.processor = null;
     this.analyser = null;
     this.stream?.getTracks().forEach((t) => t.stop());
-    void this.ctx?.close();
     this.ctx = null;
     this.stream = null;
   }

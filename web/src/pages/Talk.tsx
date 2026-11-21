@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { midSentence } from '../lib/format';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, type AppSession, type ClipResponse, type VoiceSession } from '../lib/api';
+import { api, mediaUrl, type AppSession, type ClipResponse, type VoiceSession } from '../lib/api';
 import { VoiceCall } from '../lib/agora';
 import { playAudio } from '../lib/audio';
 import { useLive, useLiveEvent } from '../lib/events';
@@ -27,7 +27,7 @@ export default function Talk() {
   const [muted, setMuted] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [capture, setCapture] = useState<Capture | null>(null);
-  const [tapReference, setTapReference] = useState<Asset | null>(null);
+  const [tapReference, setTapReference] = useState<{ asset: Asset; url: string } | null>(null);
   const [captureError, setCaptureError] = useState('');
   const [picking, setPicking] = useState(false);
   const [result, setResult] = useState<Analysis | null>(null);
@@ -127,7 +127,9 @@ export default function Talk() {
     setCapture(null);
     setCaptureError('');
     if (capture?.mode === 'tap' && capture.purpose === 'enroll') {
-      if (res.result.enrolled) setTapReference(capture.asset);
+      if (res.result.enrolled && typeof res.result.good_tap_url === 'string') {
+        setTapReference({ asset: capture.asset, url: res.result.good_tap_url });
+      }
       else setCaptureError(res.result.tip ?? 'No reference saved. Try tapping a good part once after the beep.');
     } else if (res.result.band || res.result.ok === false) setResult(res.result);
   };
@@ -217,7 +219,8 @@ export default function Talk() {
           <>
             <p className="talk-cansay-label">You can say</p>
             <div className="talk-chips">
-              {SUGGESTIONS.map((s) => (
+              {(live?.assets.some((asset) => asset.type.includes('wheel'))
+                ? ['"Set the tap baseline for Coach 4401"', '"Tap test Coach 4401"'] : SUGGESTIONS).map((s) => (
                 <span key={s} className="chip">{s}</span>
               ))}
             </div>
@@ -267,10 +270,15 @@ export default function Talk() {
       {tapReference && !capture && (
         <div className="overlay">
           <section className="card overlay-card">
-            <h2 className="card-h">Reference saved</h2>
-            <p className="muted">{tapReference.name} is ready for a tap test.</p>
+            <h2 className="card-h">Tap baseline saved</h2>
+            <p className="muted">Play the reference for {tapReference.asset.name} to check the ring before testing.</p>
+            <audio controls preload="none" src={mediaUrl(tapReference.url)} aria-label="Play saved tap baseline" />
+            <button className="btn" onClick={() => {
+              setCapture({ asset: tapReference.asset, mode: 'tap', purpose: 'enroll' });
+              setTapReference(null);
+            }}>Record baseline again</button>
             <button className="btn btn-sound" onClick={() => {
-              setCapture({ asset: tapReference, mode: 'tap', purpose: 'check' });
+              setCapture({ asset: tapReference.asset, mode: 'tap', purpose: 'check' });
               setTapReference(null);
             }}>Start tap test</button>
             <button className="btn" onClick={() => setTapReference(null)}>Done</button>
@@ -300,7 +308,7 @@ export default function Talk() {
           mode={capture.mode}
           purpose={capture.purpose}
           session={session.session}
-          requireStart
+          onSpeakerMute={(m) => callRef.current?.setAgentMuted(m)}
           onMute={(m) => callRef.current?.setMuted(m || muted)}
           onDone={onClip}
           onCancel={() => setCapture(null)}

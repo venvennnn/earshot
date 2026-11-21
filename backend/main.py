@@ -77,7 +77,16 @@ def _load_engine() -> None:
 
 async def activate_pack(pack_id: str) -> None:
     svc.pack = load_pack(pack_id)
-    state.load_pack(svc.pack, svc.audio_store.enrolled())
+    enrolled = svc.audio_store.enrolled()
+    state.load_pack(svc.pack, enrolled)
+    for asset_id in enrolled & state.assets.keys():
+        asset = state.assets[asset_id]
+        if "tap" not in asset["modes"]:
+            continue
+        baseline = svc.audio_store.load_baseline(asset_id)
+        if baseline and baseline[1].get("mode") == "tap":
+            meta = baseline[1]
+            asset["tap_reference_url"] = meta.get("good_tap_url") or meta.get("clip_url")
     try:
         await svc.enterprise.call("admin_load_pack", {"pack": pack_id})
     except ToolFailed as exc:
@@ -180,6 +189,7 @@ async def switch_pack(req: PackRequest) -> dict[str, str]:
 class SessionRequest(BaseModel):
     language: Literal["en", "hi", "ta"] = "en"
     kind: Literal["voice", "app"] = "voice"
+    asset_id: str | None = None
 
 
 async def voice_profile(language: str) -> VoiceProfile:
@@ -197,9 +207,11 @@ async def voice_profile(language: str) -> VoiceProfile:
 @app.post("/api/session")
 async def create_session(req: SessionRequest) -> dict[str, Any]:
     """Voice: create a channel + browser token and start the Agora agent. App/demo: a text/audio session."""
+    focus = req.asset_id if req.asset_id in state.assets else None
     if req.kind == "app" or settings.demo_mode:
         s = sessions.open(f"app-{secrets.token_hex(4)}", "demo" if settings.demo_mode else "app", req.language)
-        state.sessions[s.id] = {"kind": s.kind, "worker": svc.pack.worker.name}
+        s.focus_asset = focus
+        state.sessions[s.id] = {"kind": s.kind, "worker": svc.pack.worker.name, "focus": focus}
         svc.bus.changed()
         return {"kind": s.kind, "session": s.id, "greeting": greeting(svc)}
     missing = settings.missing()
@@ -208,6 +220,7 @@ async def create_session(req: SessionRequest) -> dict[str, Any]:
     channel = f"es-{secrets.token_hex(4)}"
     uid = secrets.randbelow(90_000_000) + 10_000_000
     s = sessions.open(channel, "voice", req.language)
+    s.focus_asset = focus
     try:
         await svc.agents.start(channel, uid, greeting(svc), await voice_profile(req.language))
     except (AgentError, MurfError) as exc:
@@ -215,7 +228,7 @@ async def create_session(req: SessionRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     s.add({"role": "assistant", "content": greeting(svc)})
     state.add_line(channel, "agent", greeting(svc))
-    state.sessions[channel] = {"kind": "voice", "worker": svc.pack.worker.name}
+    state.sessions[channel] = {"kind": "voice", "worker": svc.pack.worker.name, "focus": focus}
     svc.bus.changed()
     return {"kind": "voice", "session": channel, "app_id": settings.agora_app_id, "channel": channel, "uid": uid,
             "token": user_token(settings, channel, uid), "agent_uid": AGENT_UID}
@@ -285,6 +298,8 @@ async def upload_clip(
     if s is None:
         s = sessions.open(session or f"app-{secrets.token_hex(4)}", "app")
 
+    if purpose == "enroll" and mode == "tap" and state.tap_batches.get(asset["id"], {}).get("parts"):
+        raise HTTPException(status_code=409, detail="Start a new batch before replacing its baseline.")
     if purpose == "enroll":
         result, note = await listen_flow.enroll(svc, engine, asset, y, mode)
     elif purpose == "verify":
@@ -300,8 +315,9 @@ async def upload_clip(
     out: dict[str, Any] = {"session": s.id, "result": public_analysis(result)}
     # A tap (or a setup recording) is one short sentence. A full tool-loop turn here holds the
     # conversation lock and Agora gives up on whatever the worker is saying.
-    if s.kind == "voice" and spoken:
+    if spoken and (s.kind == "voice" or (purpose == "enroll" and mode == "tap")):
         orchestrator.remember_and_speak(s, note, spoken)
+        out["reply"] = spoken
     elif s.kind == "voice":
         orchestrator.background(s, note)  # the agent speaks the result when ready
     else:

@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { primeRecordingAudio } from './lib/capture';
 import Home from './pages/Home';
 import AppHome from './pages/AppHome';
 import NotFound from './pages/NotFound';
@@ -16,6 +17,20 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Recipient = lazy(() => import('./pages/Recipient'));
 
 export default function App() {
+  useEffect(() => {
+    const unlock = () => {
+      if (window.location.pathname === '/app' || window.location.pathname.startsWith('/app/')) {
+        primeRecordingAudio();
+      }
+    };
+    window.addEventListener('pointerup', unlock, true);
+    window.addEventListener('keydown', unlock, true);
+    return () => {
+      window.removeEventListener('pointerup', unlock, true);
+      window.removeEventListener('keydown', unlock, true);
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <Suspense fallback={null}>

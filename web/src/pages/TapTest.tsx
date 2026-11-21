@@ -7,7 +7,7 @@ import { useLive, useLiveEvent } from '../lib/events';
 import { useAppSession } from '../lib/useAppSession';
 import { useVoiceCall } from '../lib/useVoiceCall';
 import { MicIcon } from '../components/Icons';
-import { api, type ClipResponse, type TurnReply } from '../lib/api';
+import { api, mediaUrl, type ClipResponse, type TurnReply } from '../lib/api';
 import { playAudio } from '../lib/audio';
 import type { TapBatch, TapPart } from '../lib/types';
 import './app.css';
@@ -48,7 +48,7 @@ export default function TapTest() {
   const tapAssets = live?.assets.filter((a) => a.modes.includes('tap'));
   const asset = tapAssets?.find((a) => a.id === params.get('asset')) ?? tapAssets?.[0];
   const [recording, setRecording] = useState<{ purpose: 'check' | 'enroll'; part?: number } | null>(null);
-  const [savedReference, setSavedReference] = useState<string | null>(null);
+  const [savedReference, setSavedReference] = useState<{ assetId: string; url: string } | null>(null);
   const [said, setSaid] = useState('');
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState('');
@@ -84,7 +84,9 @@ export default function TapTest() {
   const done = (res: ClipResponse) => {
     setError('');
     if (recording?.purpose === 'enroll' && asset) {
-      if (res.result.enrolled) setSavedReference(asset.id);
+      if (res.result.enrolled && typeof res.result.good_tap_url === 'string') {
+        setSavedReference({ assetId: asset.id, url: res.result.good_tap_url });
+      }
       else setError(res.result.tip ?? 'No reference saved. Tap a good part firmly near the phone and try again.');
     } else if (res.result.ok === false) {
       setError(res.result.tip ?? 'No usable taps were detected. Try again.');
@@ -111,7 +113,8 @@ export default function TapTest() {
   const good = parts.filter((p) => p.result === 'good').length;
   const dull = parts.filter((p) => p.result === 'dull').length;
   const next = parts.length < total ? Math.max(0, ...parts.map((p) => p.n)) + 1 : null;
-  const needsReference = asset.state === 'unset' && !batch && savedReference !== asset.id;
+  const referenceUrl = savedReference?.assetId === asset.id ? savedReference.url : asset.tap_reference_url;
+  const needsReference = !referenceUrl && !batch;
   const word = asset.type.includes('wheel') ? 'wheel' : 'part';
 
   return (
@@ -121,7 +124,7 @@ export default function TapTest() {
         {tapAssets && tapAssets.length > 1 && (
           <label className="field">
             <span>Wheelset or batch</span>
-            <select value={asset.id} onChange={(e) => {
+            <select value={asset.id} disabled={voice.status === 'live' || voice.status === 'connecting'} onChange={(e) => {
               setParams({ asset: e.target.value });
               setError('');
               setSaid('');
@@ -134,7 +137,7 @@ export default function TapTest() {
           {voice.status === 'live' ? (
             <>
               <span className="pill pill-ok"><span className="dot" /> Talking to EarShot</span>
-              <span className="muted small">Say “Tap test {asset.name}” or “finish the batch”</span>
+              <span className="muted small">Say “Start recording” or “finish the batch”</span>
               {voice.needsTap && (
                 <button className="btn btn-voice" onClick={voice.resume}>Tap to hear EarShot</button>
               )}
@@ -142,16 +145,14 @@ export default function TapTest() {
             </>
           ) : (
             <>
-              <button className="btn btn-voice" disabled={voice.status === 'connecting'} onClick={() => void voice.start()}>
+              <button className="btn btn-voice" disabled={voice.status === 'connecting'} onClick={() => void voice.start(asset.id)}>
                 <MicIcon size={18} /> {voice.status === 'connecting' ? 'Connecting…' : 'Talk while testing'}
               </button>
               {voice.status === 'error' && <span className="error-text">{voice.error}</span>}
             </>
           )}
         </div>
-        <p className="muted">
-          Tap each {word} once near the phone. Good {word}s ring. A {word} with a crack sounds dull.
-        </p>
+        <p className="muted">Tap each {word} once near the phone. EarShot compares each ring with the saved baseline.</p>
 
         {needsReference ? (
           <section className="card">
@@ -160,7 +161,7 @@ export default function TapTest() {
             <button className="btn btn-sound btn-lg" disabled={!session} onClick={() => {
               setError('');
               setRecording({ purpose: 'enroll' });
-            }}>Set up reference</button>
+            }}>Record tap baseline</button>
           </section>
         ) : (
           shown && batch && (
@@ -180,8 +181,17 @@ export default function TapTest() {
           )
         )}
 
-        {savedReference === asset.id && !parts.length && (
-          <p className="pill pill-ok" role="status">Reference saved. Ready to test.</p>
+        {referenceUrl && (
+          <section className="card">
+            <h2 className="card-h">Tap baseline saved</h2>
+            <p className="muted">Play back the good {word} to check that the ring is clear.</p>
+            <audio controls preload="none" src={mediaUrl(referenceUrl)} aria-label="Play saved tap baseline" />
+            {!parts.length && (
+              <button className="btn" disabled={!session} onClick={() => setRecording({ purpose: 'enroll' })}>
+                Record baseline again
+              </button>
+            )}
+          </section>
         )}
 
         <div className="tap-grid">
@@ -217,7 +227,16 @@ export default function TapTest() {
         ) : null}
         {error && <p className="error-text">{error}</p>}
 
-        {!needsReference && (
+        {batch?.finished ? (
+          <button className="btn" onClick={async () => {
+            setError('');
+            try {
+              await api.resetTap(asset.id);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Could not start a new batch.');
+            }
+          }}>Start a new batch</button>
+        ) : !needsReference && (
           <div className="tap-actions">
             {lastDull ? (
               <button className="btn btn-sound btn-lg" onClick={() => setRecording({ purpose: 'check', part: lastDull.n })}>
@@ -233,7 +252,7 @@ export default function TapTest() {
             </button>
           </div>
         )}
-        {lastDull && next !== null && (
+        {!batch?.finished && lastDull && next !== null && (
           <button className="btn" onClick={() => setRecording({ purpose: 'check' })}>Carry on with {word} {next}</button>
         )}
       </main>
@@ -244,8 +263,8 @@ export default function TapTest() {
         </div>
       )}
       {recording && session && (
-        <ListenPanel asset={asset} mode="tap" requireStart purpose={recording.purpose} part={recording.part} session={session}
-          onMute={voice.setMuted} onDone={done} onCancel={() => setRecording(null)} />
+        <ListenPanel asset={asset} mode="tap" purpose={recording.purpose} part={recording.part} session={session}
+          onMute={voice.setMuted} onSpeakerMute={voice.setSpeakerMuted} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>
   );

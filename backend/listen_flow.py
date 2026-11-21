@@ -21,8 +21,12 @@ from tools_local import public_analysis
 async def enroll(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.ndarray, mode: str) -> tuple[dict[str, Any], str]:
     result = await asyncio.to_thread(engine.enroll, asset["id"], y, mode)
     if not result["enrolled"]:
+        if mode == "tap":
+            result["spoken"] = f"I couldn't save the tap baseline. {result['tip']}"
         return result, (f"Recording the healthy sound of {asset['name']} did not work ({result['issue']}). "
                         f"Ask the worker to try again. Tip: {result['tip']}")
+    if mode == "tap":
+        asset["tap_reference_url"] = result["good_tap_url"]
     svc.state.set_asset_state(asset["id"], "normal", "Sounds normal" if mode != "tap" else "Good part recorded")
     recorded = f"Recorded a good part's ring for {asset['name']}" if mode == "tap" else \
         f"Recorded how {asset['name']} sounds when healthy"
@@ -31,7 +35,7 @@ async def enroll(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: n
     svc.bus.changed()
     what = "a good tap" if mode == "tap" else f"{result.get('seconds', 10)} seconds of healthy sound"
     word = "wheel" if "wheel" in asset["type"] else "part"
-    result["spoken"] = (f"Got a good {word} for {asset['name']}. Tap the rest when you're ready." if mode == "tap"
+    result["spoken"] = (f"Tap baseline saved for {asset['name']}. Play the good {word}'s ring, then start the tap test." if mode == "tap"
                         else f"{asset['name']} is set up. I'll notice when it sounds different.")
     return result, (f"Recorded {what} for {asset['name']}. Tell the worker it is set up and EarShot will now notice "
                     "when it sounds different. Offer to listen again to test it.")

@@ -34,6 +34,19 @@ log = logging.getLogger("earshot.orchestrator")
 
 MAX_TOOL_ROUNDS = 8
 NOTE_PREFIX = "[EarShot system note, not the worker speaking]"
+TAP_BASELINE = re.compile(
+    r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?(?:can you\s+)?"
+    r"(?:(?:set(?: up)?|record|replace|re[ -]?record)\s+)?"
+    r"(?:(?:a|the)\s+)?(?:(?:tap|tapping|wheel)\s+)?(?:baseline|reference)"
+    r"(?:\s+(?:for|on|of))?(?:\s+(?P<asset>.+))?$",
+    re.IGNORECASE,
+)
+START_CAPTURE = re.compile(
+    r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?(?:can you\s+)?"
+    r"(?:start|begin) (?P<action>recording|listening)"
+    r"(?:\s+(?:(?:to|for)\s+)?(?:the\s+)?(?P<asset>.+))?$",
+    re.IGNORECASE,
+)
 MACHINE_CHECK = re.compile(
     r"^(?:(?:hey\s+)?earshot[\s,:]+)?(?:please\s+)?"
     r"(?:(?P<tap>tap(?:[ -]test)?)|check(?:ing)?|listen to)\s+(?:the\s+)?(?:sound of\s+)?",
@@ -69,7 +82,7 @@ If their words are Hindi, answer in Hindi. If they are Tamil, answer in Tamil. W
 
 How you work:
 - Use identify_asset to resolve spoken machine names to ids. Machines here: {assets}.
-- To check a machine by ear: call start_listening, then tell the worker to hold the phone near it and tap Start recording. \
+- To check a machine by ear: call start_listening, then tell the worker to hold the phone near it and wait for the beep. \
 The result arrives later as a system note; then call analyze_sound, get_asset_history and find_similar_cases (and assess_risk if unusual), and check spares for the likely part.
 - If no healthy sound is recorded for a machine, offer to record it now (start_listening with purpose 'enroll').
 - To add a new machine: register_asset, then start_listening with purpose 'enroll'.
@@ -179,37 +192,56 @@ class Orchestrator:
 
     async def _machine_check(self, session: Session, text: str) -> str:
         """Handle direct requests to listen even if the model or its tool schema is unavailable."""
-        command = MACHINE_CHECK.match(text.strip())
-        if not command:
+        text = text.strip().rstrip(" .!?")
+        baseline = TAP_BASELINE.fullmatch(text)
+        start = START_CAPTURE.fullmatch(text)
+        command = MACHINE_CHECK.match(text)
+        if not baseline and not command and not start:
             return ""
-        target = text.strip()[command.end():].rstrip(" .!?")
+        tap_requested = bool(baseline or (command and command.group("tap")))
         assets = self.svc.state.assets
-        if command.group("tap"):
+        if tap_requested:
             assets = {key: asset for key, asset in assets.items() if "tap" in asset.get("modes", [])}
-        if target.lower() in {"it", "that", "this machine"}:
-            asset = assets.get(session.focus_asset or "")
+        direct = baseline or start
+        target = (direct.group("asset") or "") if direct else text[command.end():]
+        if target.lower() in {"", "it", "that", "this machine", "this coach"}:
+            focused = assets.get(session.focus_asset or "")
+            matches = [focused] if focused else list(assets.values()) if direct else []
         else:
             matches = match_assets(list(assets.values()), target)
-            asset = matches[0] if len(matches) == 1 else None
-        if asset is None:
+        if len(matches) != 1:
+            if start and not tap_requested:
+                return "Which machine should I record? Say start listening to, followed by its name."
+            if tap_requested:
+                options = matches or list(assets.values())
+                names = ", ".join(asset["name"] for asset in options[:4])
+                return f"Which wheelset or batch? Choose {names}." if names else "There are no tap-test assets in this industry."
             return ""
-        mode = "tap" if command.group("tap") else (asset.get("modes") or ["continuous"])[0]
-        if mode == "tap" and asset["id"] not in self.svc.audio_store.enrolled():
+        asset = matches[0]
+        mode = "tap" if tap_requested else (asset.get("modes") or ["continuous"])[0]
+        if mode == "tap" and (baseline or not asset.get("tap_reference_url")):
             result = await self.execute(session, "start_listening", {
                 "asset_id": asset["id"], "mode": "tap", "purpose": "enroll",
             })
             if result.get("ok"):
                 part = "wheel" if "wheel" in asset["type"] else "part"
-                return f"First, record a good {part} for {asset['name']}. Tap Start recording, then tap it once after the beep."
+                return f"Record a good {part} as the baseline for {asset['name']}. Tap it once after the beep."
             return str(result.get("message") or result.get("error") or "Open Tap test to try again.")
         result = await self.execute(session, "start_listening", {"asset_id": asset["id"], "mode": mode})
         if result.get("ok"):
             if mode == "tap":
-                return f"{asset['name']} is ready. Tap Start recording, then tap each part once after the beep."
-            return f"That's {asset['name']}. Hold the phone near it and tap Start recording."
+                return f"{asset['name']} is ready. Tap each part once after the beep."
+            return f"That's {asset['name']}. Hold the phone near it. Recording starts after the beep."
         if result.get("not_enrolled"):
+            if start and start.group("action").lower() == "recording":
+                enrolled = await self.execute(session, "start_listening", {
+                    "asset_id": asset["id"], "mode": mode, "purpose": "enroll",
+                })
+                if enrolled.get("ok"):
+                    return f"Recording the healthy baseline for {asset['name']}. Make sure it is running normally."
+                return str(enrolled.get("message") or enrolled.get("error") or "I couldn't open the recorder.")
             return (f"{asset['name']} needs a healthy recording first. "
-                    "When it's running normally, tap Listen to machine to set it up.")
+                    "When it's running normally, say start recording.")
         return str(result.get("message") or result.get("error") or "Tap Listen to machine to try again.")
 
     async def _carry_out(self, session: Session) -> list[str]:

@@ -116,11 +116,15 @@ class AudioEngine:
         # A tap recording is mostly silence between taps, so its average level is not a useful check.
         if not quality.ok and not (mode == "tap" and quality.issue == "too_quiet"):
             return {"enrolled": False, "issue": quality.issue, "tip": quality.tip}
-        clip_url = self.store.save_clip(y, SR)
         if mode == "tap":
+            if float(np.max(np.abs(y))) < 0.01:
+                return {"enrolled": False, "issue": "too_quiet", "tip": "Move the phone closer and tap the good part firmly once."}
             taps = detect_taps(y)
             if not taps:
                 return {"enrolled": False, "issue": "no_taps", "tip": "Tap the good part firmly, close to the phone."}
+            if len(taps) != 1:
+                return {"enrolled": False, "issue": "multiple_taps", "tip": "Tap one known-good part once after the beep and let it ring."}
+            clip_url = self.store.save_clip(y, SR)
             embs = self.embedder.audio([windows(t.segment)[0] for t in taps])
             mean = _normalise(embs.mean(axis=0))
             dist = 1 - embs @ mean
@@ -129,7 +133,9 @@ class AudioEngine:
                     "good_decay_ms": float(np.median([t.decay_ms for t in taps])),
                     "good_envelope": taps[0].envelope, "enrolled_at": time.time()}
             self.store.save_baseline(asset_id, {"mean": mean, "dist": dist}, meta)
-            return {"enrolled": True, "mode": "tap", "taps": len(taps), "clip_url": clip_url}
+            return {"enrolled": True, "mode": "tap", "taps": len(taps), "clip_url": clip_url,
+                    "good_tap_url": meta["good_tap_url"]}
+        clip_url = self.store.save_clip(y, SR)
         embs = self.embedder.audio(windows(y))
         mean = _normalise(embs.mean(axis=0))
         dist = 1 - embs @ mean

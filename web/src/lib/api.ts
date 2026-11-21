@@ -59,8 +59,8 @@ const json = (body: unknown): RequestInit => ({
 
 export const api = {
   jiraConnection: () => call<JiraConnection>('/api/integrations/jira'),
-  startSession: (kind: 'voice' | 'app' = 'voice', language = 'en') =>
-    call<VoiceSession | AppSession>('/api/session', json({ kind, language })),
+  startSession: (kind: 'voice' | 'app' = 'voice', language = 'en', assetId?: string) =>
+    call<VoiceSession | AppSession>('/api/session', json({ kind, language, asset_id: assetId })),
   endSession: (id: string) =>
     fetch(`${BACKEND_URL}/api/session/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }),
   chat: (session: string, text: string) => call<TurnReply>('/api/chat', json({ session, text })),

@@ -17,7 +17,7 @@ from sessions import Session
 
 LocalTool = Callable[[Services, Session, dict[str, Any]], Awaitable[dict[str, Any]]]
 
-LISTEN_TELL = "Tell the worker: hold the phone near it and tap Start recording."
+LISTEN_TELL = "Tell the worker: hold the phone near it. Recording starts automatically after a beep."
 
 
 def _fn(name: str, description: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
@@ -29,7 +29,7 @@ _ASSET = {"asset_id": {"type": "string", "description": "Asset id, e.g. P-14"}}
 
 SCHEMAS: list[dict[str, Any]] = [
     _fn("start_listening",
-        "Open the phone recorder for a 10-second machine clip. The worker taps Start recording. Use mode 'continuous' for running "
+        "Open the phone recorder for a 10-second machine clip. Recording begins automatically. Use mode 'continuous' for running "
         "machines, 'tap' for tapping parts, 'alarm' for beeping boxes. Use purpose 'enroll' to record the "
         "healthy sound of a new machine, and 'verify' after a repair to check it sounds normal again (this closes "
         "the open job if it does). Returns immediately; the result arrives later as a system note.",
@@ -87,7 +87,11 @@ async def start_listening(svc: Services, session: Session, args: dict[str, Any])
     purpose = args.get("purpose") or "check"
     if asset_id not in svc.state.assets:
         return {"ok": False, "message": f"{asset_id} is not on this line. Use identify_asset or register_asset first."}
-    if purpose != "enroll" and mode != "alarm" and asset_id not in svc.audio_store.enrolled():
+    if purpose == "enroll" and mode == "tap" and svc.state.tap_batches.get(asset_id, {}).get("parts"):
+        return {"ok": False, "message": "This wheelset already has tap results. Start a new batch before replacing its baseline."}
+    enrolled = (svc.state.assets[asset_id].get("tap_reference_url") if mode == "tap"
+                else purpose == "enroll" or mode == "alarm" or asset_id in svc.audio_store.enrolled())
+    if purpose != "enroll" and not enrolled:
         return {"ok": False, "not_enrolled": True,
                 "message": "No healthy sound is recorded for this machine yet. Offer to record it now with purpose 'enroll'."}
     session.focus_asset = asset_id

@@ -10,6 +10,7 @@ AgoraRTC.setLogLevel(3); // warnings and errors only
 export class VoiceCall {
   private rtc: IAgoraRTCClient;
   private mic: IMicrophoneAudioTrack | null = null;
+  private agentMuted = false;
   private agentAudio: IRemoteAudioTrack | null = null;
   private readonly session: VoiceSession;
   /** True after the voice mic was disabled for a machine recording. Unmute then replaces the track. */
@@ -28,6 +29,7 @@ export class VoiceCall {
       if (mediaType !== 'audio' || String(user.uid) !== this.session.agent_uid) return;
       await this.rtc.subscribe(user, 'audio');
       this.agentAudio = user.audioTrack ?? null;
+      this.agentAudio?.setVolume(this.agentMuted ? 0 : 100);
       this.agentAudio?.play();
     });
     this.rtc.on('user-unpublished', (user) => {
@@ -51,6 +53,11 @@ export class VoiceCall {
   /** 0..1 loudness of the worker's own mic. */
   micLevel(): number {
     return this.mic?.getVolumeLevel() ?? 0;
+  }
+
+  setAgentMuted(muted: boolean): void {
+    this.agentMuted = muted;
+    this.agentAudio?.setVolume(muted ? 0 : 100);
   }
 
   resumeAudio(): void {

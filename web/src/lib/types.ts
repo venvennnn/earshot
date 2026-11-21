@@ -10,6 +10,7 @@ export interface Asset {
   type: string;
   line: string;
   modes: Mode[];
+  tap_reference_url?: string;
   parts: number;
   state: AssetState;
   label: string;
@@ -104,6 +105,7 @@ export interface TapPart {
 }
 
 export interface TapBatch {
+  finished?: boolean;
   asset_id: string;
   total: number;
   parts: TapPart[];

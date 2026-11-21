@@ -27,7 +27,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_direct_pump_check_prepares_the_phone_recorder(self):
         reply = await self.orchestrator.run_turn(self.session, user_text="Check pump P-14.")
-        self.assertIn("tap Start recording", reply)
+        self.assertIn("Recording starts after the beep", reply)
         self.emit.assert_any_await(
             "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="check"
         )
@@ -45,7 +45,7 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.orchestrator.svc.state.load_pack(pack, set())
         self.enrolled.return_value = set()
         reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4401.")
-        self.assertIn("record a good wheel for Coach 4401", reply)
+        self.assertIn("baseline for Coach 4401", reply)
         self.emit.assert_any_await(
             "capture_start", session=self.session.id, asset_id="C-4401", mode="tap", purpose="enroll"
         )
@@ -54,9 +54,41 @@ class CaptureHandoffTest(unittest.IsolatedAsyncioTestCase):
         pack = load_pack("railways")
         self.orchestrator.svc.pack = pack
         self.orchestrator.svc.state.load_pack(pack, {"C-4402"})
-        self.enrolled.return_value = {"C-4402"}
+        self.orchestrator.svc.state.assets["C-4402"]["tap_reference_url"] = "/media/clips/test.wav"
         reply = await self.orchestrator.run_turn(self.session, user_text="Tap test Coach 4402.")
         self.assertIn("Coach 4402 is ready", reply)
         self.emit.assert_any_await(
             "capture_start", session=self.session.id, asset_id="C-4402", mode="tap", purpose="check"
+        )
+
+
+    async def test_baseline_command_can_re_record_focused_wheelset(self):
+        pack = load_pack("railways")
+        self.orchestrator.svc.pack = pack
+        state = self.orchestrator.svc.state
+        state.load_pack(pack, {"C-4402"})
+        state.assets["C-4402"]["tap_reference_url"] = "/media/clips/test.wav"
+        self.session.focus_asset = "C-4402"
+        reply = await self.orchestrator.run_turn(self.session, user_text="Can you set the tap baseline?")
+        self.assertIn("baseline for Coach 4402", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="C-4402", mode="tap", purpose="enroll"
+        )
+
+
+    async def test_start_listening_records_focused_asset(self):
+        self.session.focus_asset = "P-14"
+        reply = await self.orchestrator.run_turn(self.session, user_text="Start listening.")
+        self.assertIn("Recording starts after the beep", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="check"
+        )
+
+    async def test_start_recording_enrolls_unset_focused_asset(self):
+        self.session.focus_asset = "P-14"
+        self.enrolled.return_value = set()
+        reply = await self.orchestrator.run_turn(self.session, user_text="Start recording.")
+        self.assertIn("healthy baseline", reply)
+        self.emit.assert_any_await(
+            "capture_start", session=self.session.id, asset_id="P-14", mode="continuous", purpose="enroll"
         )

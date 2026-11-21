@@ -140,7 +140,7 @@ export default function AddMachine() {
         </div>
       )}
       {recording && asset && session && (
-        <ListenPanel asset={asset} mode={mode} requireStart purpose={recording} session={session}
+        <ListenPanel asset={asset} mode={mode} purpose={recording} session={session}
           playFile={recording === 'enroll' ? file : null} onDone={done} onCancel={() => setRecording(null)} />
       )}
     </div>
