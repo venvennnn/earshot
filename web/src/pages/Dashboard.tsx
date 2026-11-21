@@ -7,6 +7,7 @@ import { useLive, useLiveEvent } from '../lib/events';
 import { api, mediaUrl } from '../lib/api';
 import { playAudio } from '../lib/audio';
 import { AssetHistoryPanel } from '../components/AssetHistory';
+import { TapCompare } from '../components/TapCompare';
 import type { Asset, Contact, LiveEvent, LiveState } from '../lib/types';
 import './dashboard.css';
 
@@ -157,18 +158,22 @@ function Conversations({ live }: { live: LiveState }) {
   );
 }
 
-function LineAtGlance({ live }: { live: LiveState }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [part, setPart] = useState<number | null>(null);
+function focusedAsset(live: LiveState, selected: string | null): Asset | undefined {
   const withAnalysis = live.assets.filter((a) => live.analyses[a.id]);
   const auto = withAnalysis.find((a) => a.state === 'problem') ?? withAnalysis[withAnalysis.length - 1];
-  const asset: Asset | undefined = live.assets.find((a) => a.id === selected) ?? auto;
+  return live.assets.find((a) => a.id === selected) ?? auto;
+}
+
+function LineAtGlance({ live, selected, part, onSelect, onPart }: {
+  live: LiveState;
+  selected: string | null;
+  part: number | null;
+  onSelect: (id: string) => void;
+  onPart: (n: number | null) => void;
+}) {
+  const asset = focusedAsset(live, selected);
   const analysis = asset ? live.analyses[asset.id] : undefined;
   const facts = asset ? live.facts[asset.id] ?? {} : {};
-  const choose = (id: string) => {
-    setSelected(id);
-    setPart(null);
-  };
   return (
     <section className="db-card db-col db-mid">
       <div className="db-row">
@@ -181,7 +186,7 @@ function LineAtGlance({ live }: { live: LiveState }) {
       </div>
       <div className="db-assets">
         {live.assets.map((a) => (
-          <button key={a.id} className={`db-asset ${a.state} ${asset?.id === a.id ? 'sel' : ''}`} onClick={() => choose(a.id)}>
+          <button key={a.id} className={`db-asset ${a.state} ${asset?.id === a.id ? 'sel' : ''}`} onClick={() => onSelect(a.id)}>
             <span className="db-asset-top"><b className="mono">{a.id}</b><i className={STATE_DOT[a.state]} /></span>
             <span className="muted small">{sentenceCase(a.type)}</span>
             <span className={`small state-${a.state}`}>{a.label}</span>
@@ -206,7 +211,7 @@ function LineAtGlance({ live }: { live: LiveState }) {
               </dl>
             </>
           )}
-          <AssetHistoryPanel live={live} asset={asset} part={part} onPart={setPart} />
+          <AssetHistoryPanel live={live} asset={asset} part={part} onPart={onPart} />
         </div>
       ) : (
         <p className="muted db-heard">Select a machine to see its past issues.</p>
@@ -308,10 +313,18 @@ function Briefing({ live }: { live: LiveState }) {
 export default function Dashboard() {
   const { live, connected } = useLive();
   const [soundOn, setSoundOn] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [part, setPart] = useState<number | null>(null);
+  const packId = live?.pack?.id;
+  useEffect(() => {
+    setSelected(null);
+    setPart(null);
+  }, [packId]);
   const onEvent = useCallback((e: LiveEvent) => {
     if (soundOn && e.kind === 'play_audio' && e.target === 'dashboard') void playAudio(e.url);
   }, [soundOn]);
   useLiveEvent(onEvent);
+  const asset = live ? focusedAsset(live, selected) : undefined;
 
   return (
     <div className="db">
@@ -322,9 +335,10 @@ export default function Dashboard() {
           <Tiles live={live} />
           <div className="db-grid">
             <Conversations live={live} />
-            <LineAtGlance live={live} />
+            <LineAtGlance live={live} selected={selected} part={part} onSelect={(id) => { setSelected(id); setPart(null); }} onPart={setPart} />
             <Timeline live={live} />
           </div>
+          {asset && <TapCompare live={live} asset={asset} part={part} onPart={setPart} />}
           <Briefing live={live} />
         </>
       ) : (
