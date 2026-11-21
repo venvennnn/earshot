@@ -86,6 +86,7 @@ async def activate_pack(pack_id: str) -> None:
         state.integrations = await svc.enterprise.call("admin_integrations", {})
     except ToolFailed:
         state.integrations = {}
+    await followups.refresh_histories(svc)
     await svc.kb.build(svc.pack.knowledge)
     svc.bus.changed()
 

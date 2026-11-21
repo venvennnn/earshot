@@ -6,6 +6,7 @@ import { SpectrumChart, UnusualBar } from '../components/Bits';
 import { useLive, useLiveEvent } from '../lib/events';
 import { api, mediaUrl } from '../lib/api';
 import { playAudio } from '../lib/audio';
+import { AssetHistoryPanel } from '../components/AssetHistory';
 import type { Asset, Contact, LiveEvent, LiveState } from '../lib/types';
 import './dashboard.css';
 
@@ -158,11 +159,16 @@ function Conversations({ live }: { live: LiveState }) {
 
 function LineAtGlance({ live }: { live: LiveState }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [part, setPart] = useState<number | null>(null);
   const withAnalysis = live.assets.filter((a) => live.analyses[a.id]);
   const auto = withAnalysis.find((a) => a.state === 'problem') ?? withAnalysis[withAnalysis.length - 1];
   const asset: Asset | undefined = live.assets.find((a) => a.id === selected) ?? auto;
   const analysis = asset ? live.analyses[asset.id] : undefined;
   const facts = asset ? live.facts[asset.id] ?? {} : {};
+  const choose = (id: string) => {
+    setSelected(id);
+    setPart(null);
+  };
   return (
     <section className="db-card db-col db-mid">
       <div className="db-row">
@@ -175,30 +181,35 @@ function LineAtGlance({ live }: { live: LiveState }) {
       </div>
       <div className="db-assets">
         {live.assets.map((a) => (
-          <button key={a.id} className={`db-asset ${a.state} ${asset?.id === a.id ? 'sel' : ''}`} onClick={() => setSelected(a.id)}>
+          <button key={a.id} className={`db-asset ${a.state} ${asset?.id === a.id ? 'sel' : ''}`} onClick={() => choose(a.id)}>
             <span className="db-asset-top"><b className="mono">{a.id}</b><i className={STATE_DOT[a.state]} /></span>
             <span className="muted small">{sentenceCase(a.type)}</span>
             <span className={`small state-${a.state}`}>{a.label}</span>
           </button>
         ))}
       </div>
-      {asset && analysis?.ok && analysis.spectrum ? (
+      {asset ? (
         <div className="db-heard">
-          <h3>What EarShot heard from {midSentence(asset.name)}</h3>
-          <SpectrumChart baseline={analysis.spectrum.baseline} now={analysis.spectrum.now} height={140} />
-          <p className="small"><span className="muted">Grey</span> is how {asset.id} sounds when healthy. <span className="text-sound-ink">Orange</span> is how it sounds now. {analysis.explanation}</p>
-          <p className="small muted">How unusual it sounds</p>
-          <UnusualBar analysis={analysis} />
-          <dl className="facts">
-            <div><dt>Most likely</dt><dd>{sentenceCase(analysis.label ?? '')}</dd></div>
-            <div><dt>How sure</dt><dd>{sentenceCase(analysis.confidence ?? '')}</dd></div>
-            {facts.seen_before && <div><dt>Happened before</dt><dd>{facts.seen_before}</dd></div>}
-            {facts.last_serviced && <div><dt>Last serviced</dt><dd>{facts.last_serviced}</dd></div>}
-            {facts.spare && <div><dt>Spare part</dt><dd>{facts.spare}</dd></div>}
-          </dl>
+          {analysis?.ok && analysis.spectrum && (
+            <>
+              <h3>What EarShot heard from {midSentence(asset.name)}</h3>
+              <SpectrumChart baseline={analysis.spectrum.baseline} now={analysis.spectrum.now} height={140} />
+              <p className="small"><span className="muted">Grey</span> is how {asset.id} sounds when healthy. <span className="text-sound-ink">Orange</span> is how it sounds now. {analysis.explanation}</p>
+              <p className="small muted">How unusual it sounds</p>
+              <UnusualBar analysis={analysis} />
+              <dl className="facts">
+                <div><dt>Most likely</dt><dd>{sentenceCase(analysis.label ?? '')}</dd></div>
+                <div><dt>How sure</dt><dd>{sentenceCase(analysis.confidence ?? '')}</dd></div>
+                {facts.seen_before && <div><dt>Happened before</dt><dd>{facts.seen_before}</dd></div>}
+                {facts.last_serviced && <div><dt>Last serviced</dt><dd>{facts.last_serviced}</dd></div>}
+                {facts.spare && <div><dt>Spare part</dt><dd>{facts.spare}</dd></div>}
+              </dl>
+            </>
+          )}
+          <AssetHistoryPanel live={live} asset={asset} part={part} onPart={setPart} />
         </div>
       ) : (
-        <p className="muted db-heard">Select a machine EarShot has listened to this shift to see healthy vs now.</p>
+        <p className="muted db-heard">Select a machine to see its past issues.</p>
       )}
     </section>
   );

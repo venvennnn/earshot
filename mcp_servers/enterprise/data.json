@@ -16,7 +16,9 @@
       {"id": "WO-2291", "asset_id": "P-07", "title": "Drive-end bearing failure", "priority": "emergency", "status": "closed", "when": "March", "cause": "worn bearing", "downtime_hours": 7.5, "summary": "Grinding sound for a week, bearing seized on night shift. Replaced bearing, seal and shaft sleeve."},
       {"id": "WO-2407", "asset_id": "P-11", "title": "Bearing change", "priority": "planned", "status": "closed", "when": "3 months ago", "cause": "planned maintenance", "downtime_hours": 2.0, "summary": "Planned bearing change."},
       {"id": "WO-2188", "asset_id": "P-14", "title": "Lubrication and coupling check", "priority": "routine", "status": "closed", "when": "8 months ago", "cause": "routine", "downtime_hours": 0.5, "summary": "Routine lubrication; coupling OK."},
-      {"id": "WO-1987", "asset_id": "P-03", "title": "Cavitation: strainer blocked", "priority": "high", "status": "closed", "when": "last year", "cause": "cavitation", "downtime_hours": 0.0, "summary": "Suction strainer cleared without stopping."}
+      {"id": "WO-1987", "asset_id": "P-03", "title": "Cavitation: strainer blocked", "priority": "high", "status": "closed", "when": "last year", "cause": "cavitation", "downtime_hours": 0.0, "summary": "Suction strainer cleared without stopping."},
+      {"id": "WO-2144", "asset_id": "CB-2231", "part": 4, "title": "Part 4 rang dull", "priority": "high", "status": "closed", "when": "the heat before this", "cause": "a crack", "downtime_hours": 0, "summary": "Part 4 sounded dull on the ring test. It was held and scrapped."},
+      {"id": "WO-2090", "asset_id": "CB-2231", "part": 9, "title": "Part 9 porosity", "priority": "planned", "status": "closed", "when": "last week", "cause": "porosity", "downtime_hours": 0, "summary": "Part 9 failed the tap test. The mould vent was cleaned before this heat."}
     ],
     "inventory": [
       {"code": "BRG-6309", "name": "bearing 6309-2Z", "keywords": ["bearing", "drive end bearing", "6309"], "stock": {"Main stores": 2, "Warehouse B": 4}, "unit_cost_inr": 3200},
@@ -36,7 +38,10 @@
       "DG-1": {"name": "Power car generator DG-1", "type": "generator", "line": "Pit line 2", "status": "running", "last_serviced": "2 months ago"}
     },
     "work_orders": [
-      {"id": "RM-3318", "asset_id": "C-3318", "title": "Wheel set replacement, position 3", "priority": "emergency", "status": "closed", "when": "January", "cause": "a cracked wheel", "downtime_hours": 30.0, "summary": "Dull note on ring test, crack confirmed at rim. Coach marked sick."}
+      {"id": "RM-3318", "asset_id": "C-3318", "part": 3, "title": "Wheel set replacement, position 3", "priority": "emergency", "status": "closed", "when": "January", "cause": "a cracked wheel", "downtime_hours": 30.0, "summary": "Dull note on ring test, crack confirmed at rim. Coach marked sick."},
+      {"id": "RM-4288", "asset_id": "C-4401", "part": 3, "title": "Wheel 3 dull note", "priority": "high", "status": "closed", "when": "12 days ago", "cause": "a cracked wheel", "downtime_hours": 4, "summary": "Wheel 3 rang dull. Cleaned and re-tested. It passed, and the coach stayed fit."},
+      {"id": "RM-4192", "asset_id": "C-4401", "part": 5, "title": "Wheel 5 flat spot", "priority": "planned", "status": "closed", "when": "February", "cause": "a flat spot", "downtime_hours": 6, "summary": "Wheel 5 had a flat spot. It was turned on the wheel lathe."},
+      {"id": "RM-4301", "asset_id": "C-4402", "part": 2, "title": "Wheel 2 shelling", "priority": "high", "status": "closed", "when": "last month", "cause": "shelling", "downtime_hours": 8, "summary": "Wheel 2 showed shelling after a dull ring. The wheel set was replaced."}
     ],
     "inventory": [
       {"code": "WS-915", "name": "wheel set 915 mm", "keywords": ["wheel", "wheel set", "wheelset"], "stock": {"Depot stores": 1, "Central stores": 6}, "unit_cost_inr": 285000},

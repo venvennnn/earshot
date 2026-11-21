@@ -39,6 +39,7 @@ def _load_env_file() -> None:
 
 
 _load_env_file()
+from histories import build_histories, part_number  # noqa: E402
 from jira_sync import Jira  # noqa: E402  (reads JIRA_* after .env is loaded)
 
 jira = Jira()
@@ -199,6 +200,9 @@ async def create_work_order(
     wo = {"id": store.next_id("WO"), "asset_id": asset_id.upper(), "title": title, "priority": priority,
           "status": "scheduled" if scheduled_for else "open", "when": "now", "scheduled_for": scheduled_for,
           "summary": description, "approved_by": approved_by, "at": _now()}
+    named = part_number(title, description, evidence)
+    if named is not None:
+        wo["part"] = named
     details = [description, f"What EarShot heard: {evidence}" if evidence else "",
                f"Scheduled for: {scheduled_for}" if scheduled_for else "",
                f"Approved by: {approved_by}" if approved_by else ""]
@@ -318,6 +322,9 @@ def log_inspection(asset_id: str, result: str, notes: str = "") -> dict[str, Any
     if store.asset(asset_id) is None:
         return _unknown(asset_id)
     entry = {"id": store.next_id("IN"), "asset_id": asset_id.upper(), "result": result, "notes": notes, "at": _now()}
+    named = part_number(notes)
+    if named is not None:
+        entry["part"] = named
     store.inspections.append(entry)
     return {"logged": True, **entry}
 
@@ -337,6 +344,12 @@ def register_asset(name: str, asset_type: str, line: str = "") -> dict[str, Any]
 def list_open_work_orders() -> dict[str, Any]:
     """Work orders that are not finished (the worker's open jobs)."""
     return {"work_orders": [w for w in store.work_orders if w["status"] not in ("done", "cancelled", "closed")]}
+
+
+@server.tool()
+def admin_histories() -> dict[str, Any]:
+    """Backend only: past issues and inspections for every asset, for the dashboard."""
+    return {"assets": build_histories(store.assets, store.work_orders, store.inspections)}
 
 
 @server.tool()
