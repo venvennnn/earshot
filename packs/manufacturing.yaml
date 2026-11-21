@@ -67,6 +67,7 @@ policy:
     announce_on_floor: 1
     generate_report: 1
     create_work_order: 2
+    update_work_order: 1
     update_asset_status: 2
     quarantine_batch: 2
     shutdown_line: 3

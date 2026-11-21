@@ -2,6 +2,7 @@
 
 export type AssetState = 'normal' | 'watch' | 'problem' | 'unset' | 'out';
 export type Mode = 'continuous' | 'tap' | 'alarm';
+export type Purpose = 'check' | 'enroll' | 'verify';
 
 export interface Asset {
   id: string;
@@ -36,8 +37,8 @@ export interface TimelineItem {
   id: string;
   ts: number;
   text: string;
-  status: 'done' | 'waiting' | 'next';
-  detail: { tool?: string; args?: unknown; result?: unknown; error?: string; tier?: number };
+  status: 'done' | 'waiting' | 'next' | 'failed' | 'skipped';
+  detail: { tool?: string; args?: unknown; result?: { jira_key?: string; jira_url?: string } & Record<string, unknown>; error?: string; tier?: number };
 }
 
 export interface Confirmation {
@@ -46,12 +47,27 @@ export interface Confirmation {
   asset_id: string;
   asset_name: string;
   question: string;
-  steps: string[];
+  steps: PlanStep[];
   tools: string[];
   tier: number;
   status: 'pending' | 'second_approval' | 'approved' | 'declined' | 'replaced';
   worker: string;
   approver: string | null;
+}
+
+export interface PlanStep {
+  text: string;
+  tool: string | null;
+  status?: 'next' | 'done' | 'failed' | 'skipped';
+}
+
+export interface FollowUp {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  when: string;
+  note: string;
+  status: 'open' | 'done';
 }
 
 export interface Contact {
@@ -112,13 +128,18 @@ export interface PackSummary {
   people: Person[];
 }
 
+export type JobStatus = 'open' | 'scheduled' | 'in_progress' | 'done' | 'cancelled';
+
 export interface Job {
   id: string;
   asset_id: string;
   title: string;
   priority: string;
-  status: string;
+  status: JobStatus;
   scheduled_for?: string;
+  jira_key?: string;
+  jira_url?: string;
+  jira_error?: string;
 }
 
 export interface TtsMetrics {
@@ -142,6 +163,8 @@ export interface LiveState {
   tap_batches: Record<string, TapBatch>;
   sessions: Record<string, { kind: string; worker: string; focus?: string }>;
   report: { text: string; audio_url: string | null; ts: number } | null;
+  followups: FollowUp[];
+  integrations: { jira?: boolean; jira_project?: string | null };
   tiles: {
     machines_checked: number;
     problems_caught: number;
@@ -154,7 +177,7 @@ export interface LiveState {
 }
 
 export type LiveEvent =
-  | { kind: 'capture_start'; session: string; asset_id: string; mode: Mode; purpose: 'check' | 'enroll' }
+  | { kind: 'capture_start'; session: string; asset_id: string; mode: Mode; purpose: Purpose }
   | { kind: 'play_audio'; target: 'dashboard' | 'session'; session?: string; url: string; label?: string; text?: string }
   | { kind: 'briefing'; name: string; contact_id: string }
   | { kind: 'tool'; session: string; name: string; status: string };

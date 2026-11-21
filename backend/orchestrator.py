@@ -69,6 +69,11 @@ The result arrives later as a system note; then call analyze_sound, get_asset_hi
 first call request_confirmation with the question, the steps and the tool names, then ask the worker. Never act on these without their yes. \
 A line shutdown or a large purchase also needs a second approver.
 - People you can notify (each is briefed in their own language): {people}. Floor announcements go to the floor speakers.
+- In request_confirmation list every action as a step with its tool, including tier 1 ones (reserve_part, notify_people, \
+announce_on_floor), so the worker sees the whole plan and each step is tracked.
+- Jobs move through stages with update_work_order: scheduled, in_progress, done. When the worker says a machine is fixed, \
+call start_listening with purpose 'verify'; if it sounds normal EarShot closes the job and returns the machine to service.
+- If something should be checked again later (slightly unusual, or the worker says not now), call schedule_follow_up.
 - If a spare is out of stock, offer another warehouse or a purchase request. If a recording is unclear, ask for a re-record and give the tip.
 - If you are not sure of the cause, say so and offer to call a person. If a tool fails twice, explain in plain words and offer another way.
 - Use search_knowledge for procedures (for example lockout/tagout before hands-on work) and mention the key safety step.
@@ -112,6 +117,7 @@ class Orchestrator:
             started = time.perf_counter()
             reply = await self._loop(session)
             svc.metrics.add_llm(time.perf_counter() - started)
+            confirmations.finalize(svc, session.id)  # promised steps that did not happen show as "not done"
             reply = _clean_for_speech(reply) or FALLBACK
             session.add({"role": "assistant", "content": reply})
             svc.state.add_line(session.id, "agent", reply)
@@ -161,7 +167,7 @@ class Orchestrator:
                 asset_id = str(args.get("asset_id", session.focus_asset or "")).upper()
                 action = followups.intent(svc, name, args)
                 await confirmations.open_confirmation(svc, session, asset_id, f"Shall I {action}?",
-                                                      [action[:1].upper() + action[1:]], [name])
+                                                      [{"text": action[:1].upper() + action[1:], "tool": name}], [name])
             await svc.bus.emit("tool", session=session.id, name=name, status="needs_confirmation")
             return {"status": "needs_confirmation", "tier": tier,
                     "instruction": "This needs the worker's yes" + (" and a second approver" if tier >= 3 else "")
@@ -174,10 +180,12 @@ class Orchestrator:
             if name in LOCAL_TOOLS:
                 result = await LOCAL_TOOLS[name](svc, session, args)
             else:
+                args = followups.enrich(svc, session.id, name, args)
                 result = await svc.enterprise.call(name, args)
         except ToolFailed as exc:
-            svc.state.add_timeline(f"Could not {name.replace('_', ' ')}: the system did not respond", "done",
-                                   {"tool": name, "args": args, "error": str(exc), "tier": tier})
+            detail = {"tool": name, "args": args, "error": str(exc), "tier": tier}
+            if not followups.tick_plan_step(svc, session.id, name, False, None, detail):
+                svc.state.add_timeline(f"Could not {name.replace('_', ' ')}: the system did not respond", "failed", detail)
             svc.bus.changed()
             return {"error": "The system did not respond after a retry. Explain this plainly and offer another way."}
         except Exception as exc:  # bad arguments or a bug: tell the LLM, keep the conversation alive

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type ClipResponse } from '../lib/api';
 import { CLIP_SECONDS, Recorder } from '../lib/capture';
-import type { Asset, Mode } from '../lib/types';
+import type { Asset, Mode, Purpose } from '../lib/types';
 
 const MODES: { id: Mode; label: string }[] = [
   { id: 'continuous', label: 'Running machine' },
@@ -18,7 +18,7 @@ const TIPS: Record<Mode, string> = {
 interface Props {
   asset: Asset;
   mode?: Mode;
-  purpose?: 'check' | 'enroll';
+  purpose?: Purpose;
   session?: string;
   part?: number;
   playFile?: File | null; // "Enroll from this speaker": play this file aloud while recording
@@ -106,7 +106,8 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
   return (
     <div className="listen" role="dialog" aria-label="Listening to the machine">
       <span className="listen-pill">
-        <span className="dot" /> {purpose === 'enroll' ? 'Recording the healthy sound' : 'Listening to the machine'}
+        <span className="dot" />{' '}
+        {purpose === 'enroll' ? 'Recording the healthy sound' : purpose === 'verify' ? 'Checking the repair' : 'Listening to the machine'}
       </span>
       <h1 className="listen-asset">{asset.name}</h1>
       <p className="listen-sub">

@@ -35,11 +35,11 @@ export function ConfirmSheet({ confirmation, voice, onAnswered }: Props) {
           <p className="muted">If you say yes, I will:</p>
           <ul className="checklist">
             {confirmation.steps.map((s) => (
-              <li key={s}>
+              <li key={s.text}>
                 <span className="check-ok">
                   <CheckIcon />
                 </span>
-                {s}
+                {s.text}
               </li>
             ))}
           </ul>

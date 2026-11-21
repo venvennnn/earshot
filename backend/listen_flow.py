@@ -8,7 +8,9 @@ from typing import Any
 
 import numpy as np
 
+import followups
 from audio.engine import AudioEngine
+from mcp_client import ToolFailed
 from services import Services
 from sessions import Session
 from tools_local import public_analysis
@@ -42,6 +44,7 @@ async def analyze(svc: Services, engine: AudioEngine, session: Session, asset: d
     public = public_analysis(analysis)
     st.analyses[asset["id"]] = public
     st.checked.add(asset["id"])
+    st.resolve_followups(asset["id"])
     label = analysis["label"]
     if analysis["band"] == "very unusual":
         st.problems.add(asset["id"])
@@ -65,7 +68,54 @@ async def analyze(svc: Services, engine: AudioEngine, session: Session, asset: d
             note += " You are not sure of the cause: say so and offer to call a person."
     else:
         note += ", then tell the worker it sounds normal and log the inspection."
+    if analysis["band"] == "slightly unusual":
+        note += " Schedule a follow-up to check it again."
     return analysis, note
+
+
+async def verify(svc: Services, engine: AudioEngine, session: Session, asset: dict[str, Any], y: np.ndarray) -> tuple[dict[str, Any], str]:
+    """Re-listen after a repair. Sounds normal -> close the job (and its Jira ticket), back in service, learn the cause."""
+    analysis, note = await analyze(svc, engine, session, asset, y)
+    if not analysis["ok"]:
+        return analysis, note
+    st = svc.state
+    job = next((j for j in reversed(st.jobs) if j["asset_id"] == asset["id"] and j["status"] not in ("done", "cancelled")), None)
+    if analysis["band"] != "normal":
+        if job:
+            await _job(svc, session.id, job["id"], "in_progress", f"Re-listened after the repair: still {analysis['band']}.")
+        return analysis, (f"After the repair, {asset['name']} still sounds {analysis['band']}. Tell the worker the job stays "
+                          "open and suggest what to check next. Do not close it.")
+    cause = (job or {}).get("cause_label")  # the diagnosis the job was raised for
+    if job:
+        await _job(svc, session.id, job["id"], "done", "Re-listened after the repair: sounds normal again. Closed by EarShot.")
+    try:
+        result = await svc.enterprise.call("update_asset_status", {"asset_id": asset["id"], "status": "running",
+                                                                   "reason": "repaired; sounds normal"})
+        await followups.apply(svc, session.id, "update_asset_status", {"asset_id": asset["id"]}, result, 0)
+    except ToolFailed:
+        pass
+    if cause:
+        # The repair fixed it, so the unusual recording that led to the job is a confirmed example of `cause`.
+        before = next((a for a in reversed(list(svc.analyses.values()))
+                       if a["asset_id"] == asset["id"] and a.get("band") in ("slightly unusual", "very unusual")), None)
+        if before:
+            engine.record_feedback(before, asset["type"], cause)
+    if job:
+        closed = f"job {job['id']}" + (f" (Jira {job['jira_key']})" if job.get("jira_key") else "")
+    else:
+        closed = "no open job"
+    learned = f" and learned that the cause was {cause}" if cause else ""
+    return analysis, (f"After the repair, {asset['name']} sounds normal again. EarShot closed {closed}, put it back in "
+                      f"service{learned}. Tell the worker in one or two sentences.")
+
+
+async def _job(svc: Services, session_id: str, job_id: str, status: str, note: str) -> None:
+    try:
+        result = await svc.enterprise.call("update_work_order", {"work_order_id": job_id, "status": status, "note": note})
+        await followups.apply(svc, session_id, "update_work_order", {"work_order_id": job_id, "status": status}, result, 1)
+    except ToolFailed:
+        svc.state.add_timeline(f"Could not update job {job_id}: the system did not respond", "failed")
+        svc.bus.changed()
 
 
 async def tap(svc: Services, engine: AudioEngine, asset: dict[str, Any], y: np.ndarray, part: int) -> tuple[dict[str, Any], str]:

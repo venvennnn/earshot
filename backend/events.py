@@ -52,6 +52,8 @@ class LiveState:
         self.tap_batches: dict[str, dict[str, Any]] = {}
         self.sessions: dict[str, dict[str, Any]] = {}
         self.report: dict[str, Any] | None = None
+        self.followups: list[dict[str, Any]] = []  # reminders that carry over to the next shift
+        self.integrations: dict[str, Any] = {}  # optional systems, e.g. {"jira": True, "jira_project": "EAR"}
         self.checked: set[str] = set()
         self.problems: set[str] = set()
         self.actions_done = 0
@@ -82,6 +84,27 @@ class LiveState:
         self.timeline.append(item)
         del self.timeline[:-MAX_TIMELINE]
         return item
+
+    def set_timeline_status(self, item_id: str, status: str, text: str | None = None) -> None:
+        for item in self.timeline:
+            if item["id"] == item_id:
+                item["status"] = status
+                item["ts"] = time.time()
+                if text:
+                    item["text"] = text
+
+    def add_followup(self, asset_id: str, when: str, note: str) -> dict[str, Any]:
+        item = {"id": self.next_id("f"), "asset_id": asset_id,
+                "asset_name": self.assets.get(asset_id, {}).get("name", asset_id), "when": when, "note": note,
+                "status": "open", "created": time.time()}
+        self.followups.append(item)
+        return item
+
+    def resolve_followups(self, asset_id: str) -> None:
+        """A new check of the machine answers its open reminders."""
+        for f in self.followups:
+            if f["asset_id"] == asset_id and f["status"] == "open":
+                f["status"] = "done"
 
     def add_line(self, session: str, who: str, text: str, line_id: str | None = None) -> str:
         """Add or update a transcript line (worker or agent)."""
@@ -121,6 +144,8 @@ class LiveState:
             "tap_batches": self.tap_batches,
             "sessions": self.sessions,
             "report": self.report,
+            "followups": self.followups,
+            "integrations": self.integrations,
             "tiles": self.tiles(),
             "tts": tts,
         }

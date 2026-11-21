@@ -42,7 +42,14 @@ def sentence(svc: Services, name: str, args: dict[str, Any], result: dict[str, A
             return f"Set aside {result['quantity']} {result['name']} in {result['warehouse']}" if result.get("reserved") \
                 else f"Could not set aside {args.get('part')}: out of stock"
         case "create_work_order":
-            return f"Raised repair job {result['id']} for {a}, {result['priority']} priority"
+            jira = f" · Jira {result['jira_key']}" if result.get("jira_key") else ""
+            return f"Raised repair job {result['id']} for {a}, {result['priority']} priority{jira}"
+        case "update_work_order":
+            word = {"in_progress": "started", "done": "closed", "cancelled": "cancelled", "scheduled": "scheduled",
+                    "open": "reopened"}.get(str(args.get("status")), "updated")
+            return f"Job {result['id']} {word}" if result.get("ok") else None
+        case "schedule_follow_up":
+            return f"Reminder for {args.get('when', 'the next shift')}: {args.get('note', '')}"
         case "update_asset_status":
             return f"Marked {a} as {result['status']}"
         case "quarantine_batch":
@@ -80,12 +87,52 @@ def intent(svc: Services, name: str, args: dict[str, Any]) -> str:
     }.get(name, name.replace("_", " "))
 
 
+def tick_plan_step(svc: Services, session_id: str, tool: str, ok: bool, text: str | None,
+                   detail: dict[str, Any]) -> bool:
+    """If this tool carries out a step of an approved plan, mark that step done/failed (with what actually
+    happened) instead of adding a separate timeline line."""
+    for conf in reversed(svc.state.confirmations):
+        if conf["session"] != session_id or conf["status"] != "approved":
+            continue
+        for step in conf["steps"]:
+            if step.get("status") == "next" and step["tool"] == tool:
+                step["status"] = "done" if ok else "failed"
+                for item in svc.state.timeline:
+                    if item["id"] == step["timeline_id"]:
+                        item.update(status=step["status"], ts=time.time(), detail=detail,
+                                    text=text if ok and text else (step["text"] if ok else f"{step['text']}: did not work"))
+                return True
+    return False
+
+
+def enrich(svc: Services, session_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Add the evidence and the approver to a new work order (shown in the CMMS and the Jira ticket)."""
+    if name != "create_work_order":
+        return args
+    asset_id = str(args.get("asset_id", "")).upper()
+    analysis = svc.state.analyses.get(asset_id) or {}
+    facts = svc.state.facts.get(asset_id, {})
+    parts = []
+    if analysis.get("ok"):
+        parts.append(f"{analysis['band']}, likely {analysis['label']} ({analysis['confidence']})")
+        if analysis.get("explanation"):
+            parts.append(analysis["explanation"])
+        if analysis.get("clip_url") and svc.settings.public_backend_url:
+            parts.append(f"Recording: {svc.settings.public_backend_url.rstrip('/')}{analysis['clip_url']}")
+    if facts.get("seen_before"):
+        parts.append(f"Similar case: {facts['seen_before']}")
+    approved = next((c for c in reversed(svc.state.confirmations)
+                     if c["session"] == session_id and c["status"] == "approved"), None)
+    return {**args, "evidence": " ".join(parts), "approved_by": approved.get("approved_by", "") if approved else ""}
+
+
 async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any], result: dict[str, Any], tier: int) -> None:
     """Update the twin and trigger voice follow-ups after a successful tool call."""
     st = svc.state
     text = sentence(svc, name, args, result)
-    if text:
-        st.add_timeline(text, "done", {"tool": name, "args": args, "result": result, "tier": tier})
+    detail = {"tool": name, "args": args, "result": result, "tier": tier}
+    if not tick_plan_step(svc, session_id, name, True, text, detail) and text:
+        st.add_timeline(text, "done", detail)
     if tier >= 1:
         st.actions_done += 1
     asset_id = str(args.get("asset_id", "")).upper()
@@ -98,8 +145,11 @@ async def apply(svc: Services, session_id: str, name: str, args: dict[str, Any],
             focus = asset_id or (st.sessions.get(session_id, {}).get("focus") or "")
             if focus:
                 st.facts.setdefault(focus, {})["spare"] = f"{result['total']} in stock" if result["in_stock"] else "out of stock"
+        case "update_work_order" if result.get("ok"):
+            st.jobs[:] = [{**j, **result} if j["id"] == result["id"] else j for j in st.jobs]  # keep cause_label
         case "create_work_order":
-            st.jobs.append(result)
+            label = st.analyses.get(asset_id, {}).get("label")
+            st.jobs.append({**result, "cause_label": label if label and label != "running normally" else None})
             asset = st.assets.get(asset_id)
             if asset and asset["state"] == "problem":
                 asset["label"] = f"{asset['label'].split(' · ')[0]} · job raised"
@@ -201,10 +251,12 @@ async def write_report(svc: Services, notes: str = "", file: bool = True) -> dic
     text = await complete(
         svc,
         "You write the spoken handover report for the next shift. Plain spoken English, about 120 words, no lists or "
-        "markdown. Cover: machines checked, problems found and what was done, what is waiting, and what the next "
-        "shift must do first. Only use the facts given.",
+        "markdown. Cover: machines checked, problems found and what was done, which jobs are still open (say ticket "
+        "numbers), what is waiting, and the reminders the next shift must do first. Only use the facts given.",
         f"{svc.pack.plant}, {svc.pack.line}, {svc.pack.shift}.\nCounts: {tiles}\nWhat happened:\n{events or '- nothing'}\n"
-        f"Open jobs: {[j['id'] + ' ' + j['title'] for j in st.jobs]}\nNotes from the worker: {notes}",
+        f"Jobs: {[(j['id'], j.get('jira_key'), j['title'], j['status']) for j in st.jobs]}\n"
+        f"Reminders for the next shift: {[(f['asset_name'], f['when'], f['note']) for f in st.followups if f['status'] == 'open']}\n"
+        f"Notes from the worker: {notes}",
     )
     report: dict[str, Any] = {"text": text, "audio_url": None, "ts": time.time()}
     if file:

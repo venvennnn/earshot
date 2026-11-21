@@ -9,7 +9,7 @@ Built for **Build with Agora**, track *Voice AI at Work: Beyond the Call Center*
 | Path | What it is | Deploys to |
 |---|---|---|
 | `backend/` | FastAPI: custom LLM endpoint for Agora, orchestrator and risk policy, CLAP audio engine, RAG, Murf client, live event bus | Railway |
-| `mcp_servers/enterprise/` | One MCP server (streamable HTTP) with **mock** enterprise systems: assets, CMMS, stores, notifications, reports | Railway (private) |
+| `mcp_servers/enterprise/` | One MCP server (streamable HTTP) with **mock** enterprise systems: assets, CMMS, stores, notifications, reports; optional Jira Cloud sync | Railway (private) |
 | `web/` | Vite + React + TypeScript: website, phone app, projector dashboard, recipient page | Vercel |
 | `packs/` | Industry packs (YAML): manufacturing, railways | – |
 | `knowledge/` | Enterprise knowledge for RAG: pump manual, LOTO SOP, asset histories, tap-test SOPs, past cases | – |
@@ -124,6 +124,17 @@ Murf Falcon is used twice:
 4. **Confirm.** A spoken *"yes"* (or *haan*, *sari*, …) is recognised **deterministically by the backend**, not by the LLM, and approves the pending plan for that session. Taps on the phone's confirm sheet or the dashboard's "Needs your attention" banner do the same. Approval grants exactly the listed tools, for 10 minutes.
 5. **Follow up.** The work order is raised, the part reserved, P-14 turns red on the twin, Suresh (Hindi) and Kavya (Tamil) are briefed with Murf voice messages, the floor hears the announcement, and replies flow back ("Kavya replied: no stock"). EarShot tells the worker, and the shift report is written and read aloud.
 
+**After the yes: tracked plans and closing the loop.**
+- **Plan steps:** every promised step ("Raise the repair job", "Call Suresh and Kavya", …) is tied to the tool that does it. On the timeline each step becomes **done** (with what actually happened, e.g. "Raised repair job WO-2401 · Jira EAR-12"), **failed**, or **not done** if the turn ended without it.
+- **Job stages:** jobs move through *scheduled → in progress → done* (`update_work_order`, or *Start job* on the phone).
+- **Mark done re-listens before closing:**
+  - It records the machine again after the repair.
+  - If it sounds normal, EarShot closes the job (and the Jira issue), puts the machine back in service, and saves the original recording to the case library under the confirmed cause, so the next diagnosis improves.
+  - If it still sounds unusual, the job stays open.
+- **Reminders:**
+  - "Not now", slightly unusual machines and the `schedule_follow_up` tool create reminders for the next shift.
+  - They appear on the dashboard ("Coming up next shift"), on the phone and in the spoken shift report, and are cleared when the machine is checked again.
+
 **Error handling (all demoable):**
 
 | Case | What EarShot does |
@@ -163,6 +174,16 @@ Murf Falcon is used twice:
 - the estimated hours saved per early catch (shown as **estimated** on the dashboard)
 
 Switching the industry in the dashboard reloads the twin, resets the mock enterprise data for that pack, rebuilds the knowledge index, and tells live callers. The agent's prompt is rebuilt from the active pack on every turn.
+
+**Optional Jira Cloud sync:**
+- **Turn it on:** set `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN` and `JIRA_PROJECT` (read by the MCP server). If any is missing, Jira is simply off and nothing else changes.
+- **New jobs:** every new repair job is also created as a Jira issue (REST API v3) with:
+  - summary `P-14: <title>` and the priority mapped across
+  - labels `earshot` and the asset id
+  - a description with what EarShot heard, how sure it is, the similar case, a link to the recording, the schedule and who approved it
+- **Stage changes:** each stage change adds a comment and moves the issue to the matching status category (To Do / In Progress / Done), so it works with any workflow's status names.
+- **Where the key shows:** on the phone's jobs page, the dashboard timeline ("Open in Jira") and the shift report.
+- **If Jira fails:** the job is still saved in the mock maintenance system, and Jira errors never fail a tool.
 
 **Mock data notice:** the enterprise systems (assets, CMMS work orders, inventory, notifications, reports) in `mcp_servers/enterprise/data.json` are **mock data for the demo**. Asset histories and past cases in `knowledge/` are realistic but fictional.
 
@@ -230,7 +251,7 @@ backend/.venv/bin/python scripts/eval_mimii.py --mimii data/mimii --max-test 50
 ### Deploy: Railway (backend + MCP) and Vercel (web)
 1. **MCP server** (Railway service 1):
    - Root directory `mcp_servers/enterprise`. It builds its Dockerfile.
-   - Variables: `PORT=8101` and `HOST=::` (Railway's private network uses IPv6).
+   - Variables: `PORT=8101` and `HOST=::` (Railway's private network uses IPv6), plus the optional `JIRA_*` settings.
    - **Don't** generate a public domain; it is reached over Railway's private network.
 2. **Backend** (Railway service 2):
    - Root directory `/` (repo root), config file path `/backend/railway.json` (it builds `backend/Dockerfile`).

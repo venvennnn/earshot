@@ -531,3 +531,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* jobs */
+.job-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.job-head a {
+  color: var(--voice);
+}

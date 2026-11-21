@@ -1,4 +1,4 @@
-import type { Analysis, Mode } from './types';
+import type { Analysis, Job, JobStatus, Mode, Purpose } from './types';
 
 export const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000').replace(/\/$/, '');
 
@@ -58,7 +58,7 @@ export const api = {
   endSession: (id: string) =>
     fetch(`${BACKEND_URL}/api/session/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }),
   chat: (session: string, text: string) => call<TurnReply>('/api/chat', json({ session, text })),
-  uploadClip: (wav: Blob, fields: { asset_id: string; mode: Mode; purpose: 'check' | 'enroll'; session?: string; part?: number }) => {
+  uploadClip: (wav: Blob, fields: { asset_id: string; mode: Mode; purpose: Purpose; session?: string; part?: number }) => {
     const form = new FormData();
     form.append('file', wav, 'clip.wav');
     form.append('asset_id', fields.asset_id);
@@ -75,5 +75,7 @@ export const api = {
   resetTap: (assetId: string) => call<void>(`/api/tap/${assetId}/reset`, { method: 'POST' }),
   switchPack: (id: string) => call<{ active: string }>('/api/pack', json({ id })),
   packs: () => call<{ active: string; packs: { id: string; name: string }[] }>('/api/packs'),
+  setJobStatus: (jobId: string, status: Exclude<JobStatus, 'open'>) =>
+    call<Job>(`/api/jobs/${encodeURIComponent(jobId)}/status`, json({ status })),
   writeReport: () => call<{ text: string; audio_url: string | null }>('/api/report', { method: 'POST' }),
 };

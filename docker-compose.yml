@@ -6,6 +6,9 @@
 services:
   mcp:
     build: ./mcp_servers/enterprise
+    env_file:
+      - path: .env  # optional JIRA_* settings
+        required: false
     environment:
       PORT: "8101"
     ports: ["8101:8101"]

@@ -22,6 +22,26 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 DATA_FILE = Path(__file__).with_name("data.json")
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _load_env_file() -> None:
+    """When run from the repo, pick up optional settings (e.g. JIRA_*) from the root .env. Real env vars win."""
+    if not ENV_FILE.exists():
+        return
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.split(" #", 1)[0].strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), value)
+
+
+_load_env_file()
+from jira_sync import Jira  # noqa: E402  (reads JIRA_* after .env is loaded)
+
+jira = Jira()
 SEED: dict[str, Any] = json.loads(DATA_FILE.read_text())
 
 server = MCPServer(
@@ -168,17 +188,39 @@ def reserve_part(part: str, quantity: int = 1, warehouse: str = "", work_order_i
 
 
 @server.tool()
-def create_work_order(
-    asset_id: str, title: str, priority: str = "high", description: str = "", scheduled_for: str = ""
+async def create_work_order(
+    asset_id: str, title: str, priority: str = "high", description: str = "", scheduled_for: str = "",
+    evidence: str = "", approved_by: str = "",
 ) -> dict[str, Any]:
-    """Raise a maintenance work order (repair job) in the CMMS."""
+    """Raise a maintenance work order (repair job) in the CMMS. Also creates a Jira issue when Jira is configured."""
     store.maybe_fail("create_work_order")
     if store.asset(asset_id) is None:
         return _unknown(asset_id)
     wo = {"id": store.next_id("WO"), "asset_id": asset_id.upper(), "title": title, "priority": priority,
-          "status": "open", "when": "now", "scheduled_for": scheduled_for, "summary": description, "at": _now()}
+          "status": "scheduled" if scheduled_for else "open", "when": "now", "scheduled_for": scheduled_for,
+          "summary": description, "approved_by": approved_by, "at": _now()}
+    details = [description, f"What EarShot heard: {evidence}" if evidence else "",
+               f"Scheduled for: {scheduled_for}" if scheduled_for else "",
+               f"Approved by: {approved_by}" if approved_by else ""]
+    wo.update(await jira.create(wo, details))
     store.work_orders.append(wo)
     return {"created": True, **wo}
+
+
+@server.tool()
+async def update_work_order(work_order_id: str, status: str, note: str = "") -> dict[str, Any]:
+    """Move a work order through its stages: scheduled, in_progress, done or cancelled (synced to Jira if configured)."""
+    store.maybe_fail("update_work_order")
+    wo = next((w for w in store.work_orders if w["id"] == work_order_id.upper()), None)
+    if wo is None:
+        return {"ok": False, "message": f"No work order {work_order_id}."}
+    if status not in ("open", "scheduled", "in_progress", "done", "cancelled"):
+        return {"ok": False, "message": "Status must be open, scheduled, in_progress, done or cancelled."}
+    wo["status"] = status
+    if note:
+        wo.setdefault("notes", []).append({"at": _now(), "note": note})
+    wo.update(await jira.update(wo.get("jira_key", ""), status, note))
+    return {"ok": True, **wo}
 
 
 @server.tool()
@@ -264,7 +306,7 @@ def generate_report(summary: str) -> dict[str, Any]:
     """File the shift report (EarShot also reads it out for the next shift)."""
     store.maybe_fail("generate_report")
     r = {"id": store.next_id("SR"), "summary": summary, "at": _now(),
-         "open_work_orders": [w["id"] for w in store.work_orders if w["status"] == "open"]}
+         "open_work_orders": [w["id"] for w in store.work_orders if w["status"] not in ("done", "cancelled", "closed")]}
     store.reports.append(r)
     return {"filed": True, **r}
 
@@ -293,8 +335,8 @@ def register_asset(name: str, asset_type: str, line: str = "") -> dict[str, Any]
 
 @server.tool()
 def list_open_work_orders() -> dict[str, Any]:
-    """Open work orders (the worker's open jobs)."""
-    return {"work_orders": [w for w in store.work_orders if w["status"] == "open"]}
+    """Work orders that are not finished (the worker's open jobs)."""
+    return {"work_orders": [w for w in store.work_orders if w["status"] not in ("done", "cancelled", "closed")]}
 
 
 @server.tool()
@@ -302,6 +344,12 @@ def admin_load_pack(pack: str) -> dict[str, Any]:
     """Backend only: reset mock data to the seed for an industry pack."""
     store.load(pack)
     return {"loaded": pack, "assets": list(store.assets)}
+
+
+@server.tool()
+def admin_integrations() -> dict[str, Any]:
+    """Backend only: which optional integrations are configured."""
+    return {"jira": jira.enabled, "jira_project": jira.project if jira.enabled else None}
 
 
 @server.tool()

@@ -32,6 +32,11 @@ function Header({ live, connected, soundOn, onSound }: { live: LiveState | null;
         <span className={`pill ${connected ? 'pill-ok' : 'pill-sound'}`}>
           <span className="dot" /> {connected ? 'EarShot is on' : 'Reconnecting…'}
         </span>
+        {live?.integrations.jira && (
+          <span className="pill pill-voice" title="New repair jobs are also created as Jira issues">
+            Syncing to Jira · {live.integrations.jira_project}
+          </span>
+        )}
         <span className="db-latency" title={tts ? `Measured: LLM reply ${tts.llm_reply_median_s ?? '–'} s + Murf first audio ${tts.murf_ttfa_median_s ?? '–'} s` : ''}>
           {tts?.voice_reply_s != null ? <>Voice reply in <b>{tts.voice_reply_s.toFixed(2)} s</b></> : 'Voice reply: measuring…'}
         </span>
@@ -64,7 +69,7 @@ function AttentionBanner({ live }: { live: LiveState }) {
       <div>
         <strong>{conf.question}</strong>
         <p>
-          {conf.steps.length ? `EarShot will: ${conf.steps.map(midSentence).join(', ')}. ` : ''}
+          {conf.steps.length ? `EarShot will: ${conf.steps.map((st) => midSentence(st.text)).join(', ')}. ` : ''}
           {conf.status === 'second_approval' ? `${conf.worker} said yes. Waiting for ${conf.approver} to approve.` : `Waiting for ${conf.worker} to say yes.`}
         </p>
       </div>
@@ -207,10 +212,18 @@ function Timeline({ live }: { live: LiveState }) {
       <ol className="db-timeline">
         {live.timeline.slice(-14).map((t) => (
           <li key={t.id} className={t.status}>
-            <span className="tl-icon">{t.status === 'done' ? <CheckIcon size={12} /> : null}</span>
+            <span className="tl-icon">{t.status === 'done' ? <CheckIcon size={12} /> : t.status === 'failed' ? '!' : null}</span>
             <div>
               <span>{t.text}</span>
-              <em>{t.status === 'next' ? 'next' : timeOf(t.ts)}</em>
+              <em>
+                {t.status === 'next' ? 'next' : t.status === 'skipped' ? 'not done' : timeOf(t.ts)}
+                {t.detail.result?.jira_url && (
+                  <>
+                    {' · '}
+                    <a href={t.detail.result.jira_url} target="_blank" rel="noreferrer">Open in Jira</a>
+                  </>
+                )}
+              </em>
               {tech && t.detail.tool && (
                 <code className="tl-tech">
                   {t.detail.tool}({JSON.stringify(t.detail.args ?? {})}){t.detail.tier != null ? ` · tier ${t.detail.tier}` : ''}
@@ -222,6 +235,19 @@ function Timeline({ live }: { live: LiveState }) {
         ))}
       </ol>
       {live.timeline.length === 0 && <p className="muted small">Nothing yet this shift.</p>}
+      {live.followups.some((f) => f.status === 'open') && (
+        <>
+          <h3>Coming up next shift</h3>
+          <ul className="db-followups">
+            {live.followups.filter((f) => f.status === 'open').map((f) => (
+              <li key={f.id}>
+                <strong>{f.asset_name} · {f.when}</strong>
+                <span>{f.note}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <button className="btn" onClick={() => setTech((v) => !v)}>{tech ? 'Hide technical details' : 'Show technical details'}</button>
     </section>
   );

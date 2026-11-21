@@ -56,5 +56,6 @@ LOCAL_TIER0 = {
     "find_similar_cases",
     "assess_risk",
     "request_confirmation",
+    "schedule_follow_up",
     "record_feedback",
 }

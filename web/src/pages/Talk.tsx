@@ -5,7 +5,7 @@ import { api, type AppSession, type ClipResponse, type VoiceSession } from '../l
 import { VoiceCall } from '../lib/agora';
 import { playAudio } from '../lib/audio';
 import { useLive, useLiveEvent } from '../lib/events';
-import type { Analysis, Asset, LiveEvent, Mode } from '../lib/types';
+import type { Analysis, Asset, LiveEvent, Mode, Purpose } from '../lib/types';
 import { ChevronLeftIcon, CloseIcon, MicIcon, MicOffIcon, SoundIcon, WaveIcon } from '../components/Icons';
 import { ListenPanel } from '../components/ListenPanel';
 import { ResultCard } from '../components/ResultCard';
@@ -14,7 +14,7 @@ import './app.css';
 import './talk.css';
 
 type Status = 'connecting' | 'live' | 'error';
-type Capture = { asset: Asset; mode: Mode; purpose: 'check' | 'enroll' };
+type Capture = { asset: Asset; mode: Mode; purpose: Purpose };
 
 const SUGGESTIONS = ['"Check pump P-14"', '"Listen to it"', '"Add a new machine"', '"What did you find?"'];
 

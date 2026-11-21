@@ -24,7 +24,8 @@ export default function AppHome() {
   const tapAsset = live?.assets.find((a) => a.modes.includes('tap'));
   const waiting = live?.confirmations.filter((c) => c.status === 'pending' || c.status === 'second_approval') ?? [];
   const attention = live?.assets.filter((a) => a.state === 'problem' || a.state === 'watch' || a.state === 'out') ?? [];
-  const openJobs = (live?.jobs.length ?? 0) + waiting.length;
+  const openJobs = (live?.jobs.filter((j) => j.status !== 'done' && j.status !== 'cancelled').length ?? 0) + waiting.length;
+  const reminders = live?.followups.filter((f) => f.status === 'open') ?? [];
 
   return (
     <div className="phone">
@@ -71,7 +72,7 @@ export default function AppHome() {
 
         <section>
           <h2 className="app-section-title">Needs attention</h2>
-          {waiting.length === 0 && attention.length === 0 ? (
+          {waiting.length === 0 && attention.length === 0 && reminders.length === 0 ? (
             <p className="empty-note">Nothing needs your attention right now.</p>
           ) : (
             <div className="attention-list">
@@ -97,6 +98,16 @@ export default function AppHome() {
                     <ChevronRightIcon />
                   </Link>
                 ))}
+              {reminders.map((f) => (
+                <Link key={f.id} to={`/app/listen?asset=${f.asset_id}`} className="attention watch">
+                  <span className="dot" />
+                  <span>
+                    <strong>{f.asset_name}</strong>
+                    <span className="muted">{f.note} · {f.when}</span>
+                  </span>
+                  <ChevronRightIcon />
+                </Link>
+              ))}
             </div>
           )}
         </section>

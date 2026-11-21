@@ -81,6 +81,10 @@ async def activate_pack(pack_id: str) -> None:
         await svc.enterprise.call("admin_load_pack", {"pack": pack_id})
     except ToolFailed as exc:
         log.error("Enterprise MCP server not reachable at %s: %s", settings.mcp_enterprise_url, exc)
+    try:
+        state.integrations = await svc.enterprise.call("admin_integrations", {})
+    except ToolFailed:
+        state.integrations = {}
     await svc.kb.build(svc.pack.knowledge)
     svc.bus.changed()
 
@@ -246,7 +250,7 @@ async def upload_clip(
     file: UploadFile = File(...),
     asset_id: str = Form(...),
     mode: Literal["continuous", "tap", "alarm"] = Form("continuous"),
-    purpose: Literal["check", "enroll"] = Form("check"),
+    purpose: Literal["check", "enroll", "verify"] = Form("check"),
     session: str = Form(""),
     part: int = Form(0),
 ) -> dict[str, Any]:
@@ -269,6 +273,8 @@ async def upload_clip(
 
     if purpose == "enroll":
         result, note = await listen_flow.enroll(svc, engine, asset, y, mode)
+    elif purpose == "verify":
+        result, note = await listen_flow.verify(svc, engine, s, asset, y)
     elif mode == "tap":
         result, note = await listen_flow.tap(svc, engine, asset, y, part)
     elif mode == "alarm":
@@ -362,6 +368,25 @@ async def contact_reply(contact_id: str, req: Reply) -> dict[str, str]:
 async def report() -> dict[str, Any]:
     """Write and voice the shift report (also available to the LLM as the generate_report tool)."""
     return await followups.write_report(svc)
+
+
+class JobStatus(BaseModel):
+    status: Literal["scheduled", "in_progress", "done", "cancelled"]
+    note: str = Field(default="", max_length=300)
+
+
+@app.post("/api/jobs/{job_id}/status")
+async def job_status(job_id: str, req: JobStatus) -> dict[str, Any]:
+    """Move a job through its stages from the phone (synced to Jira when configured)."""
+    try:
+        result = await svc.enterprise.call("update_work_order", {"work_order_id": job_id, "status": req.status,
+                                                                 "note": req.note or f"Set to {req.status} from the EarShot app."})
+    except ToolFailed as exc:
+        raise HTTPException(status_code=502, detail="The maintenance system did not respond.") from exc
+    if not result.get("ok"):
+        raise HTTPException(status_code=404, detail=result.get("message", "Unknown job"))
+    await followups.apply(svc, "", "update_work_order", {"work_order_id": job_id, "status": req.status}, result, 1)
+    return result
 
 
 class FailRequest(BaseModel):

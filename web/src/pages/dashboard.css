@@ -457,3 +457,41 @@ i.unset {
   line-height: 1.5;
   color: var(--text-2);
 }
+
+.db-timeline li.failed .tl-icon {
+  background: var(--problem);
+  font-size: 12px;
+}
+.db-timeline li.skipped .tl-icon {
+  border: 1.5px dashed var(--problem);
+}
+.db-timeline li.skipped span,
+.db-timeline li.failed span {
+  color: var(--problem);
+}
+.db-timeline em a {
+  color: var(--voice);
+}
+.db-followups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-followups li {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--sound-tint);
+  font-size: 14px;
+}
+.db-followups strong {
+  font-weight: 400;
+}
+.db-followups span {
+  color: var(--text-2);
+  font-size: 13px;
+}

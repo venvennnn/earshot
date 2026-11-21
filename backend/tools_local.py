@@ -30,9 +30,10 @@ SCHEMAS: list[dict[str, Any]] = [
     _fn("start_listening",
         "Start recording the machine with the phone mic for 10 seconds. Use mode 'continuous' for running "
         "machines, 'tap' for tapping parts, 'alarm' for beeping boxes. Use purpose 'enroll' to record the "
-        "healthy sound of a new machine. Returns immediately; the result arrives later as a system note.",
+        "healthy sound of a new machine, and 'verify' after a repair to check it sounds normal again (this closes "
+        "the open job if it does). Returns immediately; the result arrives later as a system note.",
         {**_ASSET, "mode": {"type": "string", "enum": ["continuous", "tap", "alarm"]},
-         "purpose": {"type": "string", "enum": ["check", "enroll"]}}, ["asset_id"]),
+         "purpose": {"type": "string", "enum": ["check", "enroll", "verify"]}}, ["asset_id"]),
     _fn("analyze_sound", "Get the result of the latest recording of an asset: how unusual it sounds and the likely cause.",
         _ASSET, ["asset_id"]),
     _fn("enroll_baseline", "Check whether an asset has its healthy sound recorded, and when.", _ASSET, ["asset_id"]),
@@ -46,9 +47,18 @@ SCHEMAS: list[dict[str, Any]] = [
         "Ask the worker to approve a plan before acting. Required before any action that stops a machine, takes it "
         "out of service, raises a stop-work order or holds a batch. List the tools you will call if they say yes.",
         {**_ASSET, "question": {"type": "string", "description": "Short spoken question, e.g. 'Stop P-14 at 10 PM and fix it?'"},
-         "steps": {"type": "array", "items": {"type": "string"}, "description": "What you will do if they say yes, in plain words"},
+         "steps": {"type": "array", "description": "Every action you will take if they say yes, in order",
+                   "items": {"type": "object", "properties": {
+                       "text": {"type": "string", "description": "Plain words, e.g. 'Raise the repair job'"},
+                       "tool": {"type": "string", "description": "The tool that does it, e.g. create_work_order"}},
+                       "required": ["text", "tool"]}},
          "tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names you will call after a yes"}},
         ["asset_id", "question", "steps", "tools"]),
+    _fn("schedule_follow_up",
+        "Add a reminder that carries over to the next shift (dashboard, phone and shift report), e.g. 'check P-13 "
+        "again tomorrow'. It is marked done automatically when the machine is checked again.",
+        {**_ASSET, "when": {"type": "string", "description": "e.g. 'tomorrow morning', 'next shift'"},
+         "note": {"type": "string"}}, ["asset_id", "when", "note"]),
     _fn("record_feedback", "Save the confirmed cause of a recording so future diagnoses improve.",
         {**_ASSET, "confirmed_cause": {"type": "string"}}, ["asset_id", "confirmed_cause"]),
 ]
@@ -73,7 +83,7 @@ async def start_listening(svc: Services, session: Session, args: dict[str, Any])
     purpose = args.get("purpose") or "check"
     if asset_id not in svc.state.assets:
         return {"ok": False, "message": f"{asset_id} is not on this line. Use identify_asset or register_asset first."}
-    if purpose == "check" and mode != "alarm" and asset_id not in svc.audio_store.enrolled():
+    if purpose != "enroll" and mode != "alarm" and asset_id not in svc.audio_store.enrolled():
         return {"ok": False, "not_enrolled": True,
                 "message": "No healthy sound is recorded for this machine yet. Offer to record it now with purpose 'enroll'."}
     session.focus_asset = asset_id
@@ -147,6 +157,12 @@ async def request_confirmation(svc: Services, session: Session, args: dict[str, 
             "instruction": "Ask the worker the question and tell them what you will do if they say yes."}
 
 
+async def schedule_follow_up(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
+    item = svc.state.add_followup(args["asset_id"].upper(), args.get("when", "next shift"), args.get("note", ""))
+    svc.bus.changed()
+    return {"scheduled": True, "id": item["id"]}
+
+
 async def record_feedback(svc: Services, session: Session, args: dict[str, Any]) -> dict[str, Any]:
     asset_id = args["asset_id"].upper()
     analysis = _latest(svc, session, asset_id)
@@ -164,5 +180,6 @@ TOOLS: dict[str, LocalTool] = {
     "find_similar_cases": find_similar_cases,
     "assess_risk": assess_risk,
     "request_confirmation": request_confirmation,
+    "schedule_follow_up": schedule_follow_up,
     "record_feedback": record_feedback,
 }
