@@ -4,7 +4,8 @@ Phase 2 scope: pick voices from Murf's own voice list (never hard-coded guesses)
 the choice per locale. Direct synthesis (alerts, announcements, shift report) is added later.
 
 API facts (from Murf's official SDK, v2.3.0): auth header `api-key`; `GET /v1/speech/voices?model=FALCON`
-returns objects with `voiceId`, `locale`, `displayName`, `gender`, `supportedLocales`.
+on the default API host returns objects with `voiceId`, `locale`, `displayName`, `gender`, `supportedLocales`.
+The regional host (MURF_REGION_URL, e.g. global.api.murf.ai) is used for low-latency synthesis.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from config import Settings
 log = logging.getLogger("earshot.murf")
 
 FALCON = "FALCON"
+MURF_API_BASE = "https://api.murf.ai"  # SDK default host for account-level calls such as the voice list
 
 
 class MurfError(RuntimeError):
@@ -29,7 +31,6 @@ class MurfClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._http = httpx.AsyncClient(
-            base_url=settings.murf_region_url.rstrip("/"),
             headers={"api-key": settings.murf_api_key.get_secret_value()},
             timeout=httpx.Timeout(20.0, connect=5.0),
         )
@@ -39,15 +40,22 @@ class MurfClient:
     async def close(self) -> None:
         await self._http.aclose()
 
+    async def _get_voices(self, params: dict[str, str]) -> httpx.Response:
+        try:
+            return await self._http.get(f"{MURF_API_BASE}/v1/speech/voices", params=params)
+        except httpx.HTTPError as exc:
+            raise MurfError(f"Could not reach Murf: {exc}") from exc
+
     async def voices(self) -> list[dict[str, Any]]:
         if self._voices is None:
-            try:
-                res = await self._http.get("/v1/speech/voices", params={"model": FALCON})
-                res.raise_for_status()
-            except httpx.HTTPError as exc:
-                raise MurfError(f"Could not list Murf voices: {exc}") from exc
+            res = await self._get_voices({"model": FALCON})
+            if res.status_code == 400:  # some accounts reject the model filter; list all voices instead
+                log.warning("Murf rejected the Falcon voice filter (%s); listing all voices", res.text[:200])
+                res = await self._get_voices({})
+            if res.is_error:
+                raise MurfError(f"Could not list Murf voices ({res.status_code}): {res.text[:300]}")
             self._voices = list(res.json())
-            log.info("Loaded %d Murf Falcon voices", len(self._voices))
+            log.info("Loaded %d Murf voices", len(self._voices))
         return self._voices
 
     async def voice_for(self, locale: str) -> str:
