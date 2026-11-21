@@ -16,7 +16,7 @@ import re
 import time
 from typing import Any
 
-from openai import APIError
+from openai import APIError, BadRequestError
 
 import confirmations
 import followups
@@ -133,6 +133,11 @@ class Orchestrator:
                     model=self.svc.settings.llm_model, messages=messages, tools=tools,
                     temperature=0.3, max_tokens=700, **self._extra(),
                 )
+            except BadRequestError as exc:
+                # The provider rejected the request (often a tool schema). Log it loudly, then answer without
+                # tools so the worker still hears the result the system note already describes.
+                log.error("LLM rejected the request for %s (answering without tools): %s", session.id, exc)
+                return await self._plain(messages)
             except APIError as exc:
                 log.error("LLM call failed for %s: %s", session.id, exc)
                 return FALLBACK
@@ -151,6 +156,18 @@ class Orchestrator:
                 result = await self.execute(session, call.function.name, args)
                 session.add({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result, default=str)})
         return "I've done several steps but need a moment. Ask me again what's next."
+
+    async def _plain(self, messages: list[dict[str, Any]]) -> str:
+        # Tool-call history can be what was rejected, so keep only plain user/assistant text.
+        plain = [m for m in messages if m["role"] in ("system", "user")
+                 or (m["role"] == "assistant" and not m.get("tool_calls"))]
+        try:
+            res = await self.svc.llm.chat.completions.create(
+                model=self.svc.settings.llm_model, messages=plain, temperature=0.3, max_tokens=400, **self._extra())
+            return res.choices[0].message.content or FALLBACK
+        except APIError as exc:
+            log.error("LLM call without tools also failed: %s", exc)
+            return FALLBACK
 
     def _extra(self) -> dict[str, Any]:
         effort = self.svc.settings.llm_reasoning_effort

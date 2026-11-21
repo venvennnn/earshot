@@ -40,6 +40,16 @@ def clean_schema(schema: Any) -> Any:
     return schema
 
 
+def to_openai(name: str, description: str, input_schema: dict[str, Any]) -> dict[str, Any]:
+    """OpenAI function format. Tools without inputs get no `parameters` at all: Gemini rejects an object schema
+    with empty `properties`."""
+    fn: dict[str, Any] = {"name": name, "description": description}
+    params = clean_schema(input_schema)
+    if params.get("properties"):
+        fn["parameters"] = params
+    return {"type": "function", "function": fn}
+
+
 class EnterpriseTools:
     def __init__(self, url: str) -> None:
         self._url = url
@@ -50,18 +60,8 @@ class EnterpriseTools:
         if self._schemas is None:
             async with Client(self._url) as client:
                 listed = await client.list_tools()
-            self._schemas = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description or t.name,
-                        "parameters": clean_schema(t.input_schema),
-                    },
-                }
-                for t in listed.tools
-                if not t.name.startswith(ADMIN_PREFIX)
-            ]
+            self._schemas = [to_openai(t.name, t.description or t.name, t.input_schema)
+                             for t in listed.tools if not t.name.startswith(ADMIN_PREFIX)]
             log.info("Loaded %d enterprise tools from MCP", len(self._schemas))
         return self._schemas
 
