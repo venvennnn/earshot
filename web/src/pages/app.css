@@ -247,8 +247,8 @@
   color: var(--sound-text);
 }
 .result-hero.problem {
-  background: var(--problem-tint);
-  color: var(--problem);
+  background: var(--voice-tint);
+  color: var(--voice);
 }
 .result-hero.normal {
   background: var(--ok-tint);
@@ -267,6 +267,33 @@
   display: grid;
   gap: 12px;
   padding: 18px;
+}
+.result-spectrum {
+  display: grid;
+  gap: 8px;
+}
+.result-spectrum .spectrum svg {
+  height: 86px;
+  background: transparent;
+  border-radius: 0;
+}
+.result-spectrum-legend {
+  display: flex;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.result-spectrum-legend span::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--sky-strong);
+}
+.result-spectrum-legend span:last-child::before {
+  background: var(--voice);
 }
 .result-details .btn {
   justify-content: flex-start;

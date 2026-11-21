@@ -154,15 +154,21 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
     setPhase('starting');
   };
 
-  const ring = 2 * Math.PI * 88;
-  const progress = phase === 'recording' ? left / clipSeconds : phase === 'working' ? 0 : 1;
+  const elapsed = phase === 'recording' ? clipSeconds - left : phase === 'working' ? clipSeconds : 0;
 
   return (
     <div className="listen" role="dialog" aria-label="Listening to the machine">
-      <span className="listen-pill">
-        <span className="dot" />{' '}
-        {tapReference ? 'Tap baseline · known-good part' : purpose === 'enroll' ? 'Recording the healthy sound' : purpose === 'verify' ? 'Checking the repair' : 'Listening to the machine'}
-      </span>
+      <div className="listen-status">
+        <span className="listen-pill">
+          <span className="dot" />{' '}
+          {tapReference ? 'Tap baseline · known-good part' : purpose === 'enroll' ? 'Recording the healthy sound' : purpose === 'verify' ? 'Checking the repair' : 'Listening to the machine'}
+        </span>
+        <div className="listen-count">
+          {phase === 'working' ? <span className="spinner" aria-label="Working" /> : (
+            <span><strong>{phase === 'recording' ? left : clipSeconds}</strong> seconds left</span>
+          )}
+        </div>
+      </div>
       <h1 className="listen-asset">{asset.name}</h1>
       <p className="listen-sub">
         {phase === 'working'
@@ -175,16 +181,7 @@ export function ListenPanel({ asset, mode: initialMode = 'continuous', purpose =
                     : 'Hold still and stay quiet until the beep'}
       </p>
 
-      <div className="listen-ring">
-        <svg viewBox="0 0 200 200" aria-hidden="true">
-          <circle cx="100" cy="100" r="88" className="ring-bg" />
-          <circle cx="100" cy="100" r="88" className="ring-fg" strokeDasharray={ring} strokeDashoffset={ring * (1 - progress)} />
-        </svg>
-        <div className="listen-count">
-          {phase === 'working' ? <span className="spinner" aria-label="Working" /> : <strong>{phase === 'recording' ? left : clipSeconds}</strong>}
-          <span>{phase === 'working' ? '' : 'seconds left'}</span>
-        </div>
-      </div>
+      <progress className="listen-progress" max={clipSeconds} value={elapsed} aria-label="Recording progress" />
 
       <figure className="listen-waveform">
         <figcaption>{file ? 'Recording waveform' : 'Microphone waveform'}</figcaption>

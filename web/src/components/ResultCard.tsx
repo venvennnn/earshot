@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { sentenceCase } from '../lib/format';
 import type { Analysis } from '../lib/types';
 import { playAudio, stopAudio } from '../lib/audio';
-import { UnusualBar } from './Bits';
+import { SpectrumChart, UnusualBar } from './Bits';
 
 interface Props {
   analysis: Analysis;
@@ -51,6 +51,16 @@ export function ResultCard({ analysis, facts = {} }: Props) {
         <h2 className="result-title">{title}</h2>
       </div>
       <div className="result-details">
+        {analysis.spectrum && (
+          <section className="result-spectrum">
+            <h3>Healthy vs now</h3>
+            <SpectrumChart baseline={analysis.spectrum.baseline} now={analysis.spectrum.now} height={86} />
+            <div className="result-spectrum-legend">
+              <span>Healthy</span>
+              <span>Now</span>
+            </div>
+          </section>
+        )}
         {analysis.baseline_url && (
           <button className="btn" onClick={compare}>
             {playing ? '■ Stop' : '▶ Hear normal vs now'}

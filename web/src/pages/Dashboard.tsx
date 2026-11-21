@@ -97,16 +97,23 @@ function Header({ live, connected, soundOn, onSound }: { live: LiveState | null;
 function AttentionBanner({ live }: { live: LiveState }) {
   const [busy, setBusy] = useState(false);
   const conf = [...live.confirmations].reverse().find((c) => c.status === 'pending' || c.status === 'second_approval');
-  if (!conf) return null;
+  if (!conf) {
+    return (
+      <section className="db-banner db-banner-clear" aria-label="Open incidents">
+        <p className="db-banner-label">Decisions this shift</p>
+        <h2>No decisions waiting</h2>
+      </section>
+    );
+  }
   const answer = async (d: 'yes' | 'no') => {
     setBusy(true);
     try { await api.answer(conf.id, d); } finally { setBusy(false); }
   };
   return (
     <section className="db-banner">
-      <span className="db-banner-icon"><SoundIcon /></span>
-      <div>
-        <strong>{conf.question}</strong>
+      <p className="db-banner-label"><SoundIcon size={18} /> Needs a decision</p>
+      <h2>{conf.question}</h2>
+      <div className="db-banner-detail">
         <p>
           {conf.steps.length ? `EarShot will: ${conf.steps.map((st) => midSentence(st.text)).join(', ')}. ` : ''}
           {conf.status === 'second_approval' ? `${conf.worker} said yes. Waiting for ${conf.approver} to approve.` : `Waiting for ${conf.worker} to say yes.`}
@@ -236,7 +243,7 @@ function LineAtGlance({ live, selected, part, onSelect, onPart }: {
             <>
               <h3>What EarShot heard from {midSentence(asset.name)}</h3>
               <SpectrumChart baseline={analysis.spectrum.baseline} now={analysis.spectrum.now} height={140} />
-              <p className="small"><span className="muted">Grey</span> is how {asset.id} sounds when healthy. <span className="text-sound-ink">Orange</span> is how it sounds now. {analysis.explanation}</p>
+              <p className="small"><span className="text-sound-ink">Sky blue</span> is how {asset.id} sounds when healthy. <span className="text-voice">Violet</span> is how it sounds now. {analysis.explanation}</p>
               <p className="small muted">How unusual it sounds</p>
               <UnusualBar analysis={analysis} />
               <dl className="facts">
@@ -260,7 +267,7 @@ function LineAtGlance({ live, selected, part, onSelect, onPart }: {
 function Timeline({ live }: { live: LiveState }) {
   const [tech, setTech] = useState(false);
   return (
-    <section className="db-card db-col">
+    <section className="db-card db-col db-activity">
       <h2>What EarShot did</h2>
       <ol className="db-timeline">
         {live.timeline.slice(-14).map((t) => (
@@ -369,22 +376,26 @@ export default function Dashboard() {
   return (
     <div className="db">
       <Header live={live} connected={connected} soundOn={soundOn} onSound={() => setSoundOn(true)} />
-      <JiraSettings project={live?.integrations.jira_project} />
       {live ? (
         <>
-          <AttentionBanner live={live} />
-          <Tiles live={live} />
+          <div className="db-overview">
+            <AttentionBanner live={live} />
+            <Tiles live={live} />
+          </div>
           <div className="db-grid">
-            <Conversations live={live} />
             <LineAtGlance live={live} selected={selected} part={part} onSelect={(id) => { setSelected(id); setPart(null); }} onPart={setPart} />
             <Timeline live={live} />
           </div>
           {asset && <TapCompare live={live} asset={asset} part={part} onPart={setPart} />}
-          <Briefing live={live} />
+          <div className="db-grid db-bottom">
+            <Conversations live={live} />
+            <Briefing live={live} />
+          </div>
         </>
       ) : (
         <p className="db-card muted">Connecting to EarShot…</p>
       )}
+      <JiraSettings project={live?.integrations.jira_project} />
     </div>
   );
 }
