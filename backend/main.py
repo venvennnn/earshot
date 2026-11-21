@@ -27,6 +27,7 @@ from events import EventBus, LiveState
 from llm_endpoint import build_router
 from mcp_client import EnterpriseTools, ToolFailed
 from murf import LOCALES, LatencyMetrics, MurfClient, MurfError
+from speech_text import SPEECH_LOCALES
 from orchestrator import Orchestrator, greeting
 from packs import available_packs, load_pack
 from rag import KnowledgeBase
@@ -174,13 +175,13 @@ class SessionRequest(BaseModel):
 
 async def voice_profile(language: str) -> VoiceProfile:
     locale = LOCALES[language]
-    words = ["yes", "yeah", "finish", "finish the batch", "EarShot"]
+    words = ["yes", "yeah", "haan", "theek hai", "sari", "aama", "finish", "finish the batch", "EarShot"]
     words += [a["name"] for a in svc.state.assets.values()] + [a["id"] for a in svc.state.assets.values()]
     words += [p.name for p in svc.pack.people] + list(svc.pack.vocabulary.values())
-    keywords = tuple(dict.fromkeys(w.strip() for w in words if w and str(w).strip()))[:60]
+    keywords = tuple(dict.fromkeys(w.strip() for w in words if w and str(w).strip()))[:100]
     if settings.murf_agent_voice:
         return VoiceProfile(ASR_LANGUAGES[language], settings.murf_agent_voice, locale, keywords)
-    voice, locale = await svc.murf.voice_for(locale, 0)
+    voice, locale = await svc.murf.voice_for_locales(list(SPEECH_LOCALES), locale, 0)
     return VoiceProfile(ASR_LANGUAGES[language], voice, locale, keywords)
 
 

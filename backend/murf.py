@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from config import Settings
+from speech_text import pick_voice, voice_locales
 
 log = logging.getLogger("earshot.murf")
 
@@ -74,7 +75,7 @@ class MurfClient:
             timeout=httpx.Timeout(30.0, connect=5.0),
         )
         self._voices: list[dict[str, Any]] | None = None
-        self._chosen: dict[tuple[str, int], str] = {}
+        self._chosen: dict[tuple[Any, ...], str] = {}
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -105,15 +106,39 @@ class MurfClient:
             return self._chosen[key], locale
         voices = await self.voices()
         for loc in [locale, *FALLBACK_LOCALES.get(locale, [])]:
-            native = sorted(v["voiceId"] for v in voices if v.get("locale") == loc and v.get("voiceId"))
-            multi = sorted(v["voiceId"] for v in voices if loc in (v.get("supportedLocales") or {}) and v.get("voiceId"))
-            candidates = native or multi
-            if candidates:
-                voice = candidates[index % len(candidates)]
+            picked = pick_voice(voices, [loc], index)
+            if picked:
+                voice, _chosen_locale = picked
                 self._chosen[key] = voice
                 log.info("Murf voice for %s (role %d): %s", loc, index, voice)
                 return voice, loc
         raise MurfError(f"Murf has no voice for {locale}.")
+
+    async def voice_for_locales(self, locales: list[str], prefer: str, index: int = 0) -> tuple[str, str]:
+        """One voice that can speak every locale. `prefer` is the locale used for this utterance."""
+        key = ("+".join(locales), prefer, index)
+        if key in self._chosen:
+            voice = self._chosen[key]
+            return voice, self._locale_for(voice, prefer, locales[0] if locales else prefer)
+        voices = await self.voices()
+        picked = pick_voice(voices, locales, index)
+        if not picked:
+            return await self.voice_for(prefer, index)
+        voice, fallback = picked
+        self._chosen[key] = voice
+        locale = self._locale_for(voice, prefer, fallback)
+        log.info("Murf voice for %s (role %d): %s (%s)", "+".join(locales), index, voice, locale)
+        return voice, locale
+
+    def _locale_for(self, voice_id: str, prefer: str, fallback: str) -> str:
+        for voice in self._voices or []:
+            vid = str(voice.get("voiceId") or voice.get("voice_id") or "")
+            if vid == voice_id:
+                codes = voice_locales(voice)
+                if not codes or prefer in codes:
+                    return prefer
+                return fallback if fallback in codes else sorted(codes)[0]
+        return prefer
 
     # --- synthesis -------------------------------------------------------------------------
     async def synthesize(self, text: str, language: str = "en", kind: str = "speech", role: int = 1) -> dict[str, Any]:
